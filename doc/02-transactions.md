@@ -157,6 +157,30 @@ MAY be duplicated.
 
 [BIP-340 Specification]: https://github.com/bitcoin/bips/blob/master/bip-0340.mediawiki#user-content-Specification
 
+Participants
+------------
+
+Sidepool version 1 pools must have a number of participants:
+
+* At least 3 participants
+  (`sidepool_version_1_min_participants`).
+* At most 28 participants
+  (`sidepool_version_1_max_participants`).
+
+> **Rationale** `sidepool_version_1_max_outputs` limits the
+> number of channels that can be updated in this sidepool, as
+> each updated channel needs to have an HTLC temporarily hosted
+> in the sidepool in order to change the balance of that channel.
+> For 28 participants, with every participant having a channel
+> with every other participant, that is 406 channels, which
+> already exceeds the specified `sidepool_version_1_max_outputs`.
+>
+> A sidepool with only 2 participants has no advantage over a
+> 2-participant Lightning Network channel, while being slower
+> and more blockchain-inefficient in a unilateral close case,
+> thus sidepools must have at least 3 participants for minimum
+> utility on top of Lightning Nework channels.
+
 Swap Party Phases
 -----------------
 
@@ -222,6 +246,7 @@ to lowest bit, with the first 5 update transactions taking 2 bits
 and the last update transaction taking the last 1 bit.
 
 | Counter Bits        | 10 9  |  8 7   | 6 5   | 4 3    | 2 1   | 0    |
+|---------------------|-------|--------|-------|--------|-------|------|
 | Update Transaction  | First | Second | Third | Fourth | Fifth | Last |
 
 The `nSequence` of an update transaction depends on the value
@@ -452,6 +477,7 @@ Recall that each update transaction is assigned bit fields of
 the pool, as follows:
 
 | Counter Bits        | 10 9  |  8 7   | 6 5   | 4 3    | 2 1   | 0    |
+|---------------------|-------|--------|-------|--------|-------|------|
 | Update Transaction  | First | Second | Third | Fourth | Fifth | Last |
 
 To know if a particular update transaction (First, Second, etc.)
@@ -460,9 +486,12 @@ needs to be recreated, then we should check if all the bits to the
 field itself) are all 1s.
 
 For example, to determine if the Third update transaction must be
-recreated, we should check if bits 4, 3, 2, 1, 0 are all 1s.
+recreated, we should check the current pool update counter if
+bits 4, 3, 2, 1, 0 are all 1s, as those bits are to the right of
+the bit field of the Third update transaction.
 This is because once we add 1 to the counter, a carry of 1 will
-propagate all the way to bit 5.
+propagate all the way to bit 5, causing the Third update
+transaction to change.
 
 Since the current pool update counter at the start of the
 Expansion Phase must be odd, the lowest bit, bit 0, is always 1,
