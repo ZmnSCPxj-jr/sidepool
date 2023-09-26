@@ -295,13 +295,13 @@ the pool follower MUST re-send the response.
 
 The message pairs are:
 
-| Pool Leader Broadcasts      | Pool Follower Responds        |
-|-----------------------------|-------------------------------|
-| `swap_party_begin`          | `swap_party_expand_request`   |
-| `swap_party_expand_state`   | `swap_party_expand_sign`      |
-| `swap_party_expand_done`    | `swap_party_contract_request` |
-| `swap_party_contract_state` | `swap_party_contract_sign`    |
-| `swap_party_contract_done`  | `swap_party_done_ack`         |
+| Pool Leader Broadcasts      | Pool Follower Responds         |
+|-----------------------------|--------------------------------|
+| `swap_party_begin`          | `swap_party_expand_request`    |
+| `swap_party_expand_state`   | `swap_party_expand_sign`       |
+| `swap_party_expand_done`    | `swap_party_contract_request`  |
+| `swap_party_contract_state` | `swap_party_contract_sign`     |
+| `swap_party_contract_done`  | `swap_party_contract_done_ack` |
 
 MuSig2 requires two communication rounds, and a swap party has by
 default two phases, each with its own MuSig2 signing session.
@@ -345,7 +345,7 @@ Sequence Diagram
        |    swap_party_contract_done   |
        |------------------------------>|
        |                               |
-       |      swap_party_done_ack      |
+       | swap_party_contract_done_ack  |
        |<------------------------------|
        |                               |
 
@@ -483,7 +483,7 @@ signs a [BIP-340 Design][] tagged hash:
 
 `Funding Transaction Output` is the current funding transaction
 output of the sidepool.
-It is composed of 32 bytes of the funding traansaction ID, and 2
+It is composed of 32 bytes of the funding transaction ID, and 2
 bytes, a big-endian 16-bit number specifying the output index of
 the funding transaction output, for a total of 34 bytes.
 
@@ -912,8 +912,8 @@ transaction in a `swap_party_expand_sign` message:
 2.  TLVs:
     * `swap_party_expand_sign_id` (40600)
       - Length: 16
-      - Value: The sidepool identifier of the sidepool whose
-        swap party begins now.
+      - Value: The sidepool identifier of the sidepool which the
+        pool follower is providing signatures for.
       - Required.
     * `swap_party_expand_sign_signatures` (40602)
       - Length: 192 (= 6 * 32)
@@ -986,16 +986,16 @@ The pool leader then broadcasts the aggregated signatures for the
 new, post-Expansion state, using the `swap_party_expand_done`
 message.
 
-1.  `swap_party_expand_done` (406)
+1.  `swap_party_expand_done` (408)
     - Sent from pool leader to pool followers to provide completed
       signatures for the post-Expansion state.
 2.  TLVs:
-    * `swap_party_expand_done_id` (40600)
+    * `swap_party_expand_done_id` (40800)
       - Length: 16
       - Value: The sidepool identifier of the sidepool whose
-        swap party begins now.
+        Expansion Phase has completed.
       - Required.
-    * `swap_party_expand_done_signatures` (40602)
+    * `swap_party_expand_done_signatures` (40802)
       - Length: 384 (= 6 * 64)
       - Value: A length 6 array of signatures, in the format defined
         by [BIP-340 Default Signing][].
@@ -1006,10 +1006,10 @@ message.
 `swap_party_expand_done_signatures` are the aggregated signatures
 for each update transaction, for the post-Expansion state.
 Each entry corresponds to an update transaction.
-Not update transactions are recreated in the Expansion Phass; only
-recreated update transactions have a valid entry in this array,
-and entries corresponding to update transactions that are not
-recreated are all 0s.
+Not all update transactions are recreated in the Expansion Phass;
+only recreated update transactions have a valid entry in this
+array, and entries corresponding to update transactions that are
+not recreated are all 0s.
 
 Receivers of this message MUST validate the following:
 
@@ -1020,8 +1020,9 @@ Receivers of this message MUST validate the following:
 * `swap_party_expand_done_signatures` exists and is of valid
   length.
 
-If the above validation fails, the receiver ignores the message,
-and SHOULD log a warning about the protocol violation.
+If any of the above validation fails, the receiver SHOULD ignore
+the message and SHOULD log it as a warning or alarm it to the
+human operator.
 
 The pool follower then MUST validate the following:
 
@@ -1031,8 +1032,8 @@ The pool follower then MUST validate the following:
 
 [BIP-340 Verification]: https://github.com/bitcoin/bips/blob/master/bip-0340.mediawiki#user-content-Verification
 
-If the above validation fails, the pool follower MUST fail the
-sidepool.
+If the above validation fails, the pool follower MUST abort the
+sidepool as per [SIDEPOOL-03][].
 
 After validation, the pool follower MUST, atomically, update the
 below in persistent storage:
@@ -1121,7 +1122,7 @@ sign a [BIP-340 Design][] tagged hash:
 
 `Funding Transaction Output` is the current funding transaction
 output of the sidepool.
-It is composed of 32 bytes of the funding traansaction ID, and 2
+It is composed of 32 bytes of the funding transaction ID, and 2
 bytes, a big-endian 16-bit number specifying the output index of
 the funding transaction output, for a total of 34 bytes.
 
@@ -1137,7 +1138,7 @@ entry in the `swap_party_contract_request_prevouts_signed`
 
 > **Rationale** In principle, instead of one signature for each
 > output that is consumed, a single signature can be used instead,
-> aggregated from each individual output.
+> aggregated from each individual output consumed.
 > However, in the case where higher-level protocols have decided
 > that some partcipant now owns an output, but the output was
 > created with shared control, consuming that output would require
@@ -1320,12 +1321,12 @@ follower:
     the current `swap_party_contract_state` with the previous one,
     and failing validation if they are different.
 
-If the above validation fails, the pool follower MUST abotr the
+If the above validation fails, the pool follower MUST abort the
 sidepool.
 If the above validation passes, the pool follower resends the
 partial signatures it already generated.
 
-it generates partial signatures for each recreated update
+It generates partial signatures for each recreated update
 transaction, using [BIP-327 Signing][].
 The pool follower MUST delete its `secnonce` or equivalent
 structure (by zeroing out its memory and then freeing it or
@@ -1336,4 +1337,217 @@ signatures in-memory.
 Contraction Phase State Signing
 -------------------------------
 
-TODO
+The pool follower indicates that it validated the next state by
+sending its partial signature for the recreated Last update
+transaction in a `swap_party_contract_sign` message:
+
+1.  `swap_party_contract_sign` (416)
+    - Sent from pool followers to pool leaders in response to
+      `swap_party_expand_state`.
+2.  TLVs:
+    * `swap_party_contract_sign_id` (40600)
+      - Length: 16
+      - Value: The sidepool identifier of the sidepool which the
+        pool follower is providing a signature for.
+      - Required.
+    * `swap_party_contract_sign_signature` (40602)
+      - Length: 192 (= 6 * 32)
+      - Value: A BIP-327 partial signature.
+      - Required.
+
+`swap_party_contract_sign_signature` is the partial signature
+that the pool follower generated after it has validated the output
+state sent in a previous `swap_party_contract_state`.
+
+Receivers of this message MUST validate the following:
+
+* It recognizes that it is the pool leader of the given sidepool
+  with the given pool identifier.
+* The message sender is a pool follower of the given sidepool
+  with the given pool identifier.
+* `swap_party_contract_sign_signatures` exists and is of valid
+  length.
+
+If any of the above validation fails, the receiver SHOULD ignore
+the message and SHOULD log it as a warning or alarm it to the
+human operator.
+
+The pool leader then validates the following:
+
+* It recently sent a `swap_party_contract_state` message.
+* It has not received a `swap_party_contract_sign` message from
+  this pool follower yet.
+* `swap_party_contract_sign_signatures` passes [BIP-327 Partial
+  Signature Validation][] for the recreated Last update
+  transaction.
+
+If any of the above validation fails, the pool leader MUST abort
+the sidepool.
+
+Once the pool leader has received `swap_party_expand_sign` from
+all pool followers, the pool leader generates its own partial
+signature for the recreated Last update transaction.
+The pool leader then performs [BIP-327 Partial Signature
+Aggregation][] on all the partial signatures.
+
+The pool leader MUST, atomically, update the below in persistent
+storage:
+
+* Store the signature for the recreated Last update transactions.
+* Increment the pool update counter.
+* Set the current output state to the Contraction Phase next
+  output state, that was sent in the previous
+  `swap_party_contract_state`.
+
+Contraction Phase Completion
+----------------------------
+
+The pool leader then broadcasts the aggregated signature for the
+new, post-Contraction state using the `swap_party_contract_done`
+message.
+
+1.  `swap_party_contract_done` (418)
+    - Sent from pool leader to pool followers to provide completed
+      signatures for the post-Expansion state.
+2.  TLVs:
+    * `swap_party_contract_done_id` (41800)
+      - Length: 16
+      - Value: The sidepool identifier of the sidepool whose
+        Contraction Phase has completed.
+      - Required.
+    * `swap_party_contract_done_signature` (41802)
+      - Length: 64
+      - Value: A signature for the Last update transaction, in the
+        format defined by [BIP-340 Default Signing][].
+      - Required.
+    * `swap_party_contract_done_will_reseat` (41804)
+      - Length: 0
+      - Optional.
+
+`swap_party_contract_done_signature` is the aggregated signature
+for the Last update transaction, for the post-Contraction state.
+
+`swap_party_contract_done_will_reseat`, if present, indicates that
+there will be a Reseat Phase after the Contraction Phase.
+See [SIDEPOOL-05][] for more details on Reseat Phase.
+
+Receivers of this message MUST validate the following:
+
+* It recognizes that it is a pool follower (and not the pool
+  leader) of the given sidepool with the given pool identifier.
+* The message sender is the pool leader of the sidepool with the
+  given pool identifier.
+* `swap_party_contract_done_signature` exists and is of valid
+  length.
+* If `swap_party_contract_done_will_reseat` exists, it has length
+  0.
+
+If any of the above validation fails, the receiver SHOULD ignore
+the message and SHOULD log it as a warning or alarm it to the
+human operator.
+
+The pool follower then MUST validate the following:
+
+* The signature for the recreated Last update tranasction is
+  valid for the post-Contraction state sent in the
+  `swap_party_contract_state`, as per [BIP-340 Verification][].
+* OR, if the current pool update counter is odd, the signature
+  is bit-per-bit exactly the same as the persisted signature for
+  the Last update transaction.
+
+If the above validation fails, the pool follower MUST abort the
+sidepool as per [SIDEPOOL-03][].
+
+If the current pool update counter is odd and the above validation
+succeeded, then the pool follower MUST simply send the
+`swap_party_contract_done_ack` message, and MUST NOT update any
+persisted data.
+
+> **Rationale** In the very edge case where:
+>
+> 1.  The pool leader sends `swap_party_contract_done`.
+> 2.  The pool follower is able to persist the signature and
+>     update the pool update counter.
+> 3.  The pool follower crashes before it can send
+>     `swap_party_contract_done_ack`.
+> 4.  The pool follower comes back online and reconnects.
+>
+> Then the pool leader will reasonably re-send
+> `swap_party_contract_done`, on the presumption that this is
+> "just" the network connection being unreliable.
+> However, swap party information is recommended in this
+> specification to be in-memory, thus at restart, the pool follower
+> thinks that there is no swap party currently on-going.
+> In that case, the pool follower can see that the message is
+> simply a resend of a message it has already received and whose
+> result it has persisted, and it can safely pretend that it knows
+> of the swap party.
+
+After validation, if the current pool update counter is even, the
+pool follower MUST, atomically, update the below in persistent
+storage:
+
+* Store the signature for the recreated Last update transaction.
+* Increment the pool update counter.
+* Set the current output state to the Contraction Phase next output
+  state, that was sent in the previous `swap_party_contract_state`.
+
+Once the pool follower has persisted the above updates, it should
+update any higher-level protocols that the Contraction Phase has
+completed.
+
+If `swap_party_contract_done_will_reseat` exists, then the pool
+follower knows that there will be an upcoming Reseat Phase, and the
+pool leader will send, after all pool followers have replied with
+`swap_party_contract_done_ack`, a separate message `reseat_begin`,
+as described in [SIDEPOOL-05][].
+
+### Acknowledging Contraction Phase Completion
+
+The pool follower will then send a `swap_party_contract_done_ack`
+message, to inform the pool leader that it has received and
+persisted the aggregated signature for the post-Contraction state.
+
+> **Rationale** This message is necessary to handle the edge case
+> where the pool follower disconnects after the pool leader has
+> sent the aggregated signature for the state.
+> In that case, the pool leader cannot be sure that the pool
+> follower has received the aggregated signature.
+> This message is a definite information that the pool follower
+> has indeed received the signature for the last state.
+
+1.  `swap_party_contract_done_ack` (420)
+    - Sent by pool followers to the pool leader to acknowledge that
+      the Contraction Phase has ended.
+2.  TLVs:
+    * `swap_party_contract_done_ack_id` (42000)
+      - Length: 16
+      - Value: The sidepool identifier of the pool.
+      - Required.
+
+Receivers of this message MUST validate the following:
+
+* It recognizes that it is the pool leader of the given sidepool
+  with the given pool identifier.
+* The message sender is a pool follower of the given sidepool with
+  the given pool identifier.
+
+If any of the above validation fails, the receiver SHOULD ignore
+the message and SHOULD log it as a warning or alarm it to the
+human operator.
+
+If the pool leader did not receive a previous
+`swap_party_contract_done_ack` from the sending pool follower yet,
+then the pool leader simply marks that the specific pool follower
+has sent it and there is no need to re-send the
+`swap_party_contract_done` message when that pool follower
+reconnects.
+
+Once all pool followers have responded with this message, the
+pool leader proceeds:
+
+* If the pool leader has signalled an upcoming Reseat Phase via
+  including `swap_party_contract_done_will_reseat` to the previous
+  `swap_party_contract_done` message, then the pool leader
+  initiates the Reseat Phase as described in [SIDEPOOL-05][].
+* Otherwise, the pool leader can now forget about the swap party.
