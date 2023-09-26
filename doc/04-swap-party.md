@@ -49,7 +49,10 @@ The phases are:
 
 This specification primarily discusses the Expansion and
 Contraction Phases.
-Details of the Reseat Phase are on its own document (TODO).
+Details of the Reseat Phase are on its own document
+[SIDEPOOL-05][].
+
+[SIDEPOOL-05]: ./05-reseat-splice.md
 
 Scheduling
 ----------
@@ -73,7 +76,8 @@ the worst case that is the allowed delay).
 > **Rationale** If all sidepools have the same scheduled cadence
 > for swap parties, then the human operators of a node that
 > happens to be a participant in multiple sidepools only need to
-> arrange maintenance windows around that single cadence.
+> arrange maintenance windows to avoid the time from 00:00 to
+> 01:00 UTC daily.
 >
 > At the same time, for testing and evaluation purposes, it may
 > be useful for a pool leader to simply declare the start of a
@@ -97,7 +101,8 @@ the worst case that is the allowed delay).
 > that the update has completed and problems are resolved.
 > Such suspension is arranged out-of-band to this specification;
 > (**non-normative**) actual implementations should support this
-> kind of suspension, as well as triggering swap parties "early".
+> kind of suspension, as well as triggering swap parties "early"
+> or at any time.
 
 Non-Persistent MuSig2
 ---------------------
@@ -111,12 +116,15 @@ Generation][].
 Participants first need to generate `secnonce`, then derive a
 structure called `pubnonce`, the latter of which is then sent to
 the pool leader, which aggregates the `pubnonce`s into an
-`aggnonce`.
+`aggnonce`, as per [BIP-327 Nonce Aggregation][].
 The pool leader then broadcasts the `aggnonce` to the pool
 followers, which then need the `secnonce` to generate their
-partial signatures.
+partial signatures together with the `aggnonce`, as per
+[BIP-327 Signing][].
 
 [BIP-327 Nonce Generation]: https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki#user-content-Nonce_Generation-2
+[BIP-327 Nonce Aggregation]: https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki#user-content-Nonce_Aggregation
+[BIP-327 Signing]: https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki#user-content-Signing
 
 Pool participants MUST NOT store the `secnonce`, or equivalent
 structure, in persistent storage.
@@ -247,13 +255,13 @@ All participants MUST impose timeouts:
 * For the Expansion Phase:
   * The timeout begins at `swap_party_begin` message sent from
     the pool leader to pool followers.
-  * The timeout ends at `swap_party_expand_complete` message
-    sent from the pool leader to pool followers.
+  * The timeout ends at `swap_party_expand_done` message sent from
+    the pool leader to pool followers.
 * For the Contraction Phase:
-  * The timouet begins at `swap_party_expand_complete` message
-    sent from the pool leader to pool followers.
-  * The timeout ends at `swap_party_contract_complete` message
-    sent from the pool leader to pool followers.
+  * The timouet begins at `swap_party_expand_done` message sent
+    from the pool leader to pool followers.
+  * The timeout ends at `swap_party_contract_done` message sent
+    from the pool leader to pool followers.
 
 In case of a timeout, the sidepool is aborted.
 
@@ -261,6 +269,8 @@ Network is unreliable, thus, it is possible for pool leaders and
 pool followers to see a disconnection of their Lightning Network
 connections, but become able to reconnect before the above
 timeout expires.
+This disconnection may occur even if both pool follower and pool
+leader have remained running and have not crashed.
 
 When a connection breaks, it is possible that one end of the
 connection believes it has completely sent a message, but the
@@ -387,7 +397,7 @@ Receivers of this message MUST validate the following:
 * The message sender is the pool leader of the sidepool with the
   given pool identifier.
 
-If the above validation fails, the reeiver ignores the message,
+If the above validation fails, the receiver ignores the message,
 and SHOULD log a warning about the protocol violation.
 
 If validation succeeds, the receiver MUST:
@@ -436,15 +446,14 @@ transaction outputs.
         - 8 bytes: Amount, in satoshis, big-endian 64-bit
       - Required if `swap_party_expand_request_prevout_signed` is
         specified.
-        Absent if `swap_party_expand_request_prevout_signed` is
-        not specified.
-    * `swap_party_expand_request_nonces` (40208)
+        Absent otherwise.
+    * `swap_party_expand_request_nonces` (40206)
       - Length: 396 (= 6 * (33 + 33))
       - Value: A length 6 array of entries:
         - 33 bytes: First MuSig2 nonce
         - 33 bytes: Second MuSig2 nonce
       - Required.
-    * `swap_party_expand_request_still_contract` (40210)
+    * `swap_party_expand_request_still_contract` (40208)
       - Length: 0
       - Optional.
 
@@ -461,13 +470,22 @@ amount.
 Each entry also includes a signature.
 
 The signature in `swap_party_expand_request_prevout_signed`
-signs a tagged hash:
+signs a [BIP-340 Design][] tagged hash:
 
     tag = "sidepool version 1 expansion phase"
-    content = Next Pool Update Counter ||
+    content = Funding Transaction Output ||
+              Next Pool Update Counter ||
               Current X-only Pubkey ||
               Current Amount ||
               value in swap_party_expand_request_newouts
+
+[BIP-340 Design]: https://github.com/bitcoin/bips/blob/master/bip-0340.mediawiki#user-content-Design
+
+`Funding Transaction Output` is the current funding transaction
+output of the sidepool.
+It is composed of 32 bytes of the funding traansaction ID, and 2
+bytes, a big-endian 16-bit number specifying the output index of
+the funding transaction output, for a total of 34 bytes.
 
 `Next Pool Update Counter` is the pool update counter,
 zero-extended from 11 bits to 16 bits, in big-endian order (two
@@ -480,10 +498,27 @@ each swap party involves two increments, thus the Expansion Phase
 will always start with the pool update counter odd and will end
 with it even).
 
+> **Rationale** In principle, only the output to be consumed and
+> the new outputs to create need to be signed, but the tag, the
+> funding transaction output, and the counter all provide a
+> context for the signature, reducing the scope in which it could
+> be accepted as valid.
+>
+> More specifically, the tag restricts the signature to this
+> specific step in the protocol, the funding transaction output
+> restricts the signature to a specific sidepool using this
+> protocol, and the pool update counter restricts the signature
+> to a specific swap party in the lifetime of a pool.
+> In particular, a reseat of the sidepool, which would reuse
+> pool update counter values, would require a change in the
+> funding transaction output, so a signature from the same
+> sidepool before a reseat cannot be reused after the reseat,
+> even if they have the same pool update counter.
+
 `Current X-only Pubkey` is the Taproot X-only public key for the
 output specified in `swap_party_expand_request_prevout_signed`,
 in its 32-byte serialization, and `Current Amount` is the 64-bit
-amount in satoshis, in big-endian order (2 bytes).
+amount in satoshis, in big-endian order (8 bytes).
 
 The signature itself should validate against the `Current X-only
 Pubkey`.
@@ -540,8 +575,9 @@ Receivers of this message MUST validate the following:
 * It has recently sent `swap_party_begin` and the sender has not
   sent this response yet.
 * If `swap_party_expand_request_prevout_signed` exists:
-  * The indicated output currently exists in the current output
-    state, and has not been indicated by a different
+  * It is of valid length.
+  * The indicated output exists in the current output state, and
+     has not been indicated by a different
     `swap_party_expand_request` message by a different pool
     follower.
     * Note that the output state is a bag, not a set.
@@ -558,8 +594,10 @@ Receivers of this message MUST validate the following:
     * The signature in `swap_party_expand_request_prevout_signed`
       signs the correct message based on the value of
       `swap_party_expand_request_newouts`.
-* The entries in `swap_party_expand_request_nonces` that are
-  required are non-0.
+* `swap_party_expand_request_nonces` exists and is of valid
+  length, and:
+  * The entries in `swap_party_expand_request_nonces` that are
+    required are non-0.
 
 If any of the above validation fails, the receiver SHOULD ignore
 the message and SHOULD log it as a warning or alarm it to the
@@ -665,8 +703,6 @@ per [BIP-327 Nonce Aggregation][].
 It aggregates nonces for each update transaction that needs to be
 recreated.
 
-[BIP-327 Nonce Aggregation]: https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki#user-content-Nonce_Aggregation
-
 The pool leader then broadcasts the `swap_party_expand_state`
 message, so that the pool followers can validate the new state.
 
@@ -688,7 +724,7 @@ message, so that the pool followers can validate the new state.
       - Required.
     * `swap_party_expand_state_beneficiary` (40404)
       - Length: 40
-      - Value: A structure:
+      - Value: A structure composed of:
         - 32 bytes: Taproot X-only Pubkey.
         - 8 bytes: Amount, in satoshis, big-endian 64-bit
           number.
@@ -728,6 +764,8 @@ Receivers of this message MUST validate the following:
   leader) of the given sidepool with the given pool identifier.
 * The message sender is the pool leader of the given sidepool
   with the given pool identifier.
+* A swap party was initiated and is in the Expansion Phase, and
+  the receiver recently sent a `swap_party_expand_request`.
 * TLV fields `swap_party_expand_state_nonces`,
   `swap_party_expand_state_beneficiary`, and
   `swap_party_expand_state_next` all exist and have valid
@@ -747,10 +785,6 @@ Receivers of this message MUST validate the following:
 If any of the above validation fails, the receiver SHOULD ignore
 the message and SHOULD log it as a warning or alarm it to the
 human operator.
-
-On receiving and validating this message, the pool follower
-computes the onchain fee contribution tax, as well as the onchain
-fee contribution overpayment.
 
 The pool follower then checks if any outputs it expects exist in
 the given next state:
@@ -780,11 +814,13 @@ the given next state:
     the next state.
 
 If any of the above checks fail, the pool follower MUST abort the
-sidepool, as per SIDEPOOL-03 (TODO).
+sidepool, as per [SIDEPOOL-03][] (TODO: section).
+
+[SIDEPOOL-03]: ./03-setup-and-teardown.md
 
 > **Rationale** The only legitimate reason for an expansion
 > request to be denied is if it would cause the sidepool to
-> exceed the specified limit.
+> exceed the specified maximum number of outputs.
 > Thus, it is an error of the pool leader if it rejects some
 > single request, if the limit would not be reached by that
 > request.
@@ -807,6 +843,12 @@ sidepool; it MUST abort only the higher-level protocol.
 > need to be tolerant if the output did not exist in the next
 > state of the Expansion Phase.
 
+The pool follower now computes the onchain fee contribution tax,
+as well as the onchain fee contribution overpayment.
+It can now determine how the recreated update transactions look
+like, based on the next output state, the onchain fee contribution
+tax, the overpayment, and the overpayment beneficiary.
+
 The pool follower then checks if it has already generated
 partial signatures in response to some previous
 `swap_party_expand_state` message.
@@ -816,21 +858,24 @@ follower:
 * MUST validate that the existing generated partial signatures
   validly sign the recreated update transactions for this set of
   outputs.
+  * MAY implement this validation by instead caching the previous
+    `swap_party_expand_state` message and comparing the TLVs of
+    the current `swap_party_expand_state` with the previous one,
+    and failing validation if they are different.
 
 If the above validation fails, the pool follower MUST abort the
 sidepool.
+If the above validation passes, the pool follower resends the
+partial signatures it already generated.
 
-Otherwise, if the pool follower has not generated partial
-signatures for the Expansion Phase of this swap party, the pool
-follower generates partial signatures for each recreated update
+If the pool follower has not generated partial signatures yet,
+it generates partial signatures for each recreated update
 transaction, using [BIP-327 Signing][].
 The pool follower MUST delete its `secnonce` or equivalent
 structure (by zeroing out its memory and then freeing it or
 dropping all references to it), which it can use to determine if
 it already created signatures, and must also retain its partial
 signatures in-memory.
-
-[BIP-327 Signing]: https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki#user-content-Signing
 
 > **Rationale** An attacking pool leader might simulate a
 > "network failure" by deliberately disconnecting after receiving
@@ -865,4 +910,430 @@ transaction in a `swap_party_expand_sign` message:
     - Sent from pool followers to pool leaders in response to
       `swap_party_expand_state`.
 2.  TLVs:
-    * TODO
+    * `swap_party_expand_sign_id` (40600)
+      - Length: 16
+      - Value: The sidepool identifier of the sidepool whose
+        swap party begins now.
+      - Required.
+    * `swap_party_expand_sign_signatures` (40602)
+      - Length: 192 (= 6 * 32)
+      - Value: A length 6 array of BIP-327 partial signatures.
+      - Required.
+
+`swap_party_expand_sign_signatures` are the partial signatures
+that the pool follower generated after it has validated the output
+state sent in a previous `swap_party_expand_state`.
+
+Each entry in the `swap_party_expand_sign_signatures` array
+corresponds to a recreated update transaction.
+If a particular update transaction does not need to be recreated,
+the corresponding entry is set to all 0s.
+As noted in previous sections, the last two entries, corresponding
+to the Fifth and Last update transactions, must always be set.
+
+Receivers of this message MUST validate the following:
+
+* It recognizes that it is the pool leader of the given sidepool
+  with the given pool identifier.
+* The message sender is a pool follower of the given sidepool
+  with the given pool identifier.
+* `swap_party_expand_sign_signatures` exists and is of valid
+  length.
+
+If any of the above validation fails, the receiver SHOULD ignore
+the message and SHOULD log it as a warning or alarm it to the
+human operator.
+
+The pool leader then validates the following:
+
+* It recently sent a `swap_party_expand_state` message.
+* It has not received a `swap_party_expand_sign` message from this
+  pool follower yet.
+* The entries in `swap_party_expand_sign_signatures` that
+  correspond to recreated update transactions are non-0, and pass
+  [BIP-327 Partial Signature Validation][] for the corresponding
+  recreated update transaction.
+
+[BIP-327 Partial Signature Validation]: https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki#user-content-Partial_Signature_Verification
+
+If any of the above validation fails, the pool leader MUST abort
+the sidepool.
+
+Once the pool leader has received `swap_party_expand_sign` from
+all pool followers, the pool leader generates its own partial
+signature for the recreated update transactions.
+The pool leader then performs [BIP-327 Partial Signature
+Aggregation][] on all the partial signatures for each recreated
+update transaction.
+
+[BIP-327 Partial Signature Aggregation]: https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki#user-content-Partial_Signature_Aggregation
+
+The pool leader MUST, atomically, update the below in persistent
+storage:
+
+* Store the signatures for the recreated update transactions.
+* Increment the pool update counter.
+* Set the current output state to the Expansion Phase next output
+  state, that was sent in the previous `swap_party_expand_state`.
+
+The pool leader then creates a copy of the current output state
+and labels it the next output state.
+
+Expansion Phase Completion
+--------------------------
+
+The pool leader then broadcasts the aggregated signatures for the
+new, post-Expansion state, using the `swap_party_expand_done`
+message.
+
+1.  `swap_party_expand_done` (406)
+    - Sent from pool leader to pool followers to provide completed
+      signatures for the post-Expansion state.
+2.  TLVs:
+    * `swap_party_expand_done_id` (40600)
+      - Length: 16
+      - Value: The sidepool identifier of the sidepool whose
+        swap party begins now.
+      - Required.
+    * `swap_party_expand_done_signatures` (40602)
+      - Length: 384 (= 6 * 64)
+      - Value: A length 6 array of signatures, in the format defined
+        by [BIP-340 Default Signing][].
+      - Required.
+
+[BIP-340 Default Signing]: https://github.com/bitcoin/bips/blob/master/bip-0340.mediawiki#user-content-Default_Signing
+
+`swap_party_expand_done_signatures` are the aggregated signatures
+for each update transaction, for the post-Expansion state.
+Each entry corresponds to an update transaction.
+Not update transactions are recreated in the Expansion Phass; only
+recreated update transactions have a valid entry in this array,
+and entries corresponding to update transactions that are not
+recreated are all 0s.
+
+Receivers of this message MUST validate the following:
+
+* It recognizes that it is a pool follower (and not the pool
+  leader) of the given sidepool with the given pool identifier.
+* The message sender is the pool leader of the sidepool with the
+  given pool identifier.
+* `swap_party_expand_done_signatures` exists and is of valid
+  length.
+
+If the above validation fails, the receiver ignores the message,
+and SHOULD log a warning about the protocol violation.
+
+The pool follower then MUST validate the following:
+
+* The signatures for recreated update transactions are valid for
+  the post-Expansion state sent in the `swap_party_expand_state`,
+  as per [BIP-340 Verification][].
+
+[BIP-340 Verification]: https://github.com/bitcoin/bips/blob/master/bip-0340.mediawiki#user-content-Verification
+
+If the above validation fails, the pool follower MUST fail the
+sidepool.
+
+After validation, the pool follower MUST, atomically, update the
+below in persistent storage:
+
+* Store the signatures for the recreated update transactions.
+* Increment the pool update counter.
+* Set the current output state to the Expansion Phase next output
+  state, that was sent in the previous `swap_party_expand_state`.
+
+Signatures for update transactions that were not recreated are not
+changed and are retained.
+
+Once the pool follower has persisted the above updates, it should
+update any higher-level protocols relying on the creation of new
+outputs, as those outputs have now been instantiated into the
+latest state of the sidepool.
+Once the pool follower has continued the higher-level protocols, it
+then proceeds to the next step.
+
+Contraction Phase Requests
+--------------------------
+
+In response to `swap_party_expand_done`, pool followers send a
+`swap_party_contract_request` message.
+
+In effect, the end of the Expansion Phase signals the start of the
+Contraction Phase.
+
+Like the `swap_party_expand_request` message, the
+`swap_party_contract_request` message can be a "no-op" request
+where the pool follower does not request for any changes to any
+output it controls, or outputs it has an interest in.
+
+Otherwise, the `swap_party_contract_request` indicates one or
+more outputs to be consumed, and a single new output to be
+created.
+
+Regardless, the message always provides nonces for the next
+state.
+
+1.  `swap_party_contract_request` (412)
+    - Sent from pool follower to pool leader, in response to
+      `swap_party_expand_done` message.
+2.  TLVs:
+    * `swap_party_contract_request_id` (41200)
+      - Length: 16
+      - Value: The sidepool identifier of the pool.
+      - Required.
+    * `swap_party_contract_request_prevouts_signed` (41202)
+      - Length: 104 * N, 1 <= N <= `sidepool_version_1_max_outputs`.
+      - Value: An array of the following structure:
+        - 32 bytes: Taproot X-only Pubkey.
+        - 8 bytes: Amount, in satoshis, big-endian 64-bit.
+        - 64 bytes: Taproot signature.
+      - Optional.
+    * `swap_party_contract_request_newout` (40204)
+      - Length: 40
+      - Value: A structure composed of:
+        - 32 bytes: Taproot X-only Pubkey.
+        - 8 bytes: Amount, in satoshis, big-endian 64-bit.
+      - Required if `swap_party_contract_request_prevouts_signed`
+        is specified.
+        Absent otherwise.
+    * `swap_party_contract_request_nonces` (40206)
+      - Length: 66
+      - Value: A structure composed of:
+        - 33 bytes: First MuSig2 nonce.
+        - 33 bytes: Second MuSig2 nonce.
+
+`swap_party_contract_request_prevouts_signed` specifies one or
+more outputs present in the post-Expansion output state.
+Each entry in the array specifies the Taproot X-only Pubkey and
+the amount of the output that will be consumed.
+Each entry also includes a [BIP-340][] signature that is signed
+with the same Taproot X-only Pubkey of the output to be consumed.
+
+The signatures in `swap_party_contrat_request_prevouts_signed`
+sign a [BIP-340 Design][] tagged hash:
+
+    tag = "sidepool version 1 contraction phase"
+    content = Funding Transaction Output ||
+              Next Pool Update Counter ||
+              Current X-only Pubkey ||
+              Current Amount ||
+              value in swap_party_contract_request_newout
+
+`Funding Transaction Output` is the current funding transaction
+output of the sidepool.
+It is composed of 32 bytes of the funding traansaction ID, and 2
+bytes, a big-endian 16-bit number specifying the output index of
+the funding transaction output, for a total of 34 bytes.
+
+`Next Pool Update Counter` is the pool update counter,
+zero-extended from 11 bits to 16 bits, in big-endian order (two
+bytes).
+The exact value is the one the pool update counter will have at
+successful completion of the Contraction Phase, and MUST be odd.
+
+`Current X-only Pubkey` and `Current Amount` are the output
+indicated in the same entry, i.e. the first 40 bytes of the
+entry in the `swap_party_contract_request_prevouts_signed`
+
+> **Rationale** In principle, instead of one signature for each
+> output that is consumed, a single signature can be used instead,
+> aggregated from each individual output.
+> However, in the case where higher-level protocols have decided
+> that some partcipant now owns an output, but the output was
+> created with shared control, consuming that output would require
+> contributions from multiple parties already, and if any of the
+> outputs consumed are also aggregated, would require an
+> aggregate-within-aggregate, with attendant complexity in
+> implementing the aggregation of aggregates signing algorithm.
+
+`swap_party_contract_request_newout` indicates the new output that
+will be created on consumption of the indicated previous outputs.
+
+`swap_party_contract_request_nonces` provides the MuSig2 nonces
+for the new signature of the recreated Last update transaction.
+It is equivalent to a `pubnonce` structure from [BIP-327 Nonce
+Generation][].
+
+Receivers of this message MUST validate the following:
+
+* It recognizes that it is the pool leader of the given sidepool
+  with the given pool identifier.
+* The message sender is a pool follower of the given sidepool
+  with the given pool identifier.
+* It has recently sent `swap_party_expand_done` and the sender has
+  not sent this response yet.
+* If `swap_party_contract_request_prevouts_signed` exists:
+  * It is of valid length.
+  * The indicated outputs currently exist in the current output
+    state, and has not been indicated by a different
+    `swap_party_contract_request` message by a different pool
+    follower.
+    * Note that the output state is a bag, not a set.
+  * `swap_party_contract_request_newout` must exist.
+    * The sum total of all amounts in
+      `swap_party_contract_request_prevouts_signed` is exactly
+      equal to the amount specified in
+      `swap_party_contract_request_newout`.
+    * Each signature in
+      `swap_party_contract_request_prevouts_signed` signs the
+      correct message based on the value of
+      `swap_party_contract_request_newout`.
+* `swap_party_contract_request_nonces` exists and is of valid
+  length, and is not all 0s.
+
+If any of the above validation fails, the receiver SHOULD ignore
+the message and SHOULD log it as a warning or alarm it to the
+human operator.
+
+On receiving and validating this message, and if the message requests
+to consume outputs and create a new output, the pool leader removes
+the outputs to be consumed and adds the new output in the next output
+state.
+Again, the output state is a bag, not a set, thus if the request
+specifies an output once, but the next output state lists the output
+multiple times, only one will be deleted, and so on.
+
+Once the pool leader has received a `swap_party_contract_request`
+from each pool follower, it proceeds to the next step.
+
+Contraction Phase State Validation
+----------------------------------
+
+The pool leader also aggregates the MuSig2 nonces of all
+participants, including fresh MuSig2 nonces for itself, as per
+[BIP-327 Nonce Aggregation][].
+
+The pool leader then broadcasts the `swap_party_contract_state`
+message, so that the pool followers can validate the new state.
+
+1. `swap_party_contract_state` (414)
+   - Sent from pool leader to pool followers, once the pool
+     leader has received `swap_party_contract_request` from all
+     pool followers.
+2.  TLVs:
+    * `swap_party_contract_state_id` (41400)
+      - Length: 16
+      - Value: The sidepool identifier of the sidepool whose
+        next state post-Contraction is being broadcasted.
+      - Required.
+    * `swap_party_contract_state_nonces` (41402)
+      - Length: 66
+      - Value: A structure composed of:
+        - 33 bytes: First MuSig2 nonce
+        - 33 bytes: Second MuSig2 nonce
+      - Required.
+    * `swap_party_contract_state_beneficiary` (41404)
+      - Length: 40
+        - 32 bytes: Taproot X-only Pubkey.
+        - 8 bytes: Amount, in satoshis, big-endian 64-bit
+          number.
+      - Required.
+    * `swap_party_contract_state_next` (41406)
+      - Length: N * 40, 1 <= N <= `sidepool_version_1_max_outputs`.
+        See [SIDEPOOL-02][] for the maximum N.
+      - Value: An array of 40-byte entries:
+        - 32 bytes: Taproot X-only Pubkey
+        - 8 bytes: Amount, in satoshis, big-endian 64-bit
+      - Required.
+
+`swap_party_contract_state_nonces` are the aggregated MuSig2
+nonces for the recreated Last update transaaction, i.e. the
+`aggnonce` from [BIP-327 Nonce Aggregation][].
+
+`swap_party_contract_state_beneficiary` nominats an output of the
+next state that will benefiy from the onchain fee contribution
+overpayment, if the overpayment is non-zero.
+
+`swap_party_contract_state_next` contains the next output state
+generated by the pool leader from the `swap_party_contract_request`
+messages from the pool followers.
+The array is in the canonical order described in [SIDEPOOL-02][]
+(TODO section).
+
+Receivers of this message MUST validate the following:
+
+* It recognizes that it is a pool follower (and not the pool
+  leader) of the given sidepool with the given pool identifier.
+* The message sender is the pool leader of the given sidepool
+  with the given pool identifier.
+* A swap party was initiated and is in the Contraction Phase, and
+  the receiver recently sent a `swap_party_contract_request`.
+* TLV fields `swap_party_contract_state_nonces`,
+  `swap_party_contract_state_beneficiary`, and
+  `swap_party_contract_state_next` all exist and have valid
+  lengths.
+* Outputs in `swap_party_contract_state_next` are in canonical
+  order defined in [SIDEPOOL-02][] (TODO: section).
+* The sum total of all amounts in
+  `swap_party_contract_state_next` is equal to the satoshi value
+  of the funding transaction output backing the entire pool.
+* Each amount in `swap_party_contract_state_next` is greater than
+  or equal to `sidepool_version_1_min_amount` defined in
+  [SIDEPOOL-02][] (TODO: section).
+* The output nominated as overpayment beneficiary in
+  `swap_party_contract_state_beneficiary` exists in
+  `swap_party_contract_state_next`.
+
+If any of the above validation fails, the receiver SHOULD ignore
+the message and SHOULD log it as a warning or alarm it to the
+human operator.
+
+On receiving and validating this message, the pool follower
+computes the onchain fee contribution tax, as well as the onchain
+fee contribution overpayment.
+
+The pool follower then checks if any outputs it expects exist in
+the given next state:
+
+* If the pool follower did not request to remove old outputs in
+  the `swap_party_contract_request` message:
+  * If the pool follower is relying on the existence of
+    particular outputs, the outputs must still exist in the next
+    state.
+* If the pool follower requested to remove old outputs in the
+  `swap_party_contract_request` message:
+  * The new output it wanted to create exists in the next state.
+  * If the pool follower is relying on the existence of
+    particular outputs, the outputs must still exist in the next
+    state.
+
+If any of the above checks fail, the pool follower MUST abort the
+sidepool, as per [SIDEPOOL-03][].
+
+The pool follower now computes the onchain fee contribution tax,
+as well as the onchain fee contribution overpayment.
+It can now determine how the recreated update transactions look
+like, based on the next output state, the onchain fee contribution
+tax, the overpayment, and the overpayment beneficiary.
+
+The pool follower then checks if it has already generated
+partial signatures in response to some previous
+`swap_party_contract_state` message.
+If it already has genereated a partial signature, the pool
+follower:
+
+* MUST validate that the existing generated partial signatures
+  validly sign the recreated update transactions for this set of
+  outputs.
+  * MAY implement this validation by instead caching the previous
+    `swap_party_contract_state` message and comparing the TLVs of
+    the current `swap_party_contract_state` with the previous one,
+    and failing validation if they are different.
+
+If the above validation fails, the pool follower MUST abotr the
+sidepool.
+If the above validation passes, the pool follower resends the
+partial signatures it already generated.
+
+it generates partial signatures for each recreated update
+transaction, using [BIP-327 Signing][].
+The pool follower MUST delete its `secnonce` or equivalent
+structure (by zeroing out its memory and then freeing it or
+dropping all references to it), which it can use to determine if
+it already created signatures, and must also retain its partial
+signatures in-memory.
+
+Contraction Phase State Signing
+-------------------------------
+
+TODO
