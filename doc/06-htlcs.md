@@ -76,9 +76,38 @@ This allows HTLC participants to use the keyspend path (which is
 the only spend condition supported by sidepools) without adding
 more communication rounds and more complexity and more state.
 
+> **Rationale** Handing over private keys over a communications
+> channel is dangerous:
+> Intermediate buffers would have the private keys in cleartext
+> and might not be cleared by software that handles buffers,
+> and modern I/O libraries and I/O OS software would maintain
+> caches and buffers all the way from the sidepool software to
+> libraries down to the network buffers.
+>
+> Against the above, we observe that:
+>
+> 1.  The private keys being handed over are ephemeral and thus
+>     time-bound in their validity.
+> 2.  A single private key is insufficient to gain control of the
+>     fund, as the fund is controlled by the MuSig combination
+>     of two keys.
+>
+> Thus the risk is considered low.
+>
+> For a peerswap-in-sidepool scheme, there is a clear point
+> of whether the sidepool HTLC is owned by one or the other
+> participant: if the corresponding return in-channel HTLC
+> was created and claimed, then the acceptor of the peerswap
+> owns the fund, and if not, the initiator of the peerswap
+> owns the fund.
+> Thus, there is no case where both participants might send
+> their private keys to each other, from which a third party
+> that is somehow able to decrypt their communication can
+> acquire both keys and synthesize the aggregate private key.
+
 Due to using private key handover, HTLC offerrers and HTLC
-acceptors MUST NOT use non-hardened derivation to generate keys
-for the keyspend path of HTLCs.
+acceptors MUST NOT use non-hardened derivation to generate
+ephemeral keys for the keyspend path of HTLCs.
 HTLC offerrers and HTLC acceptors MAY use hardened derivation
 at the last branch of a BIP-32 derivation path, provided that
 they ensure that they do not reuse derivation indexes.
@@ -345,12 +374,16 @@ Happy Path HTLC Fulfillment
         |-------------------------->|                        |
         |---------------------------(----------------------->|
         |                           |                        |
+        |swap_party_contract_done_ack                        |
+        |<--------------------------|                        |
+        |<--------------------------(------------------------|
+        |                           |                        |
 
 In the above diagram `(message with preimage)` is shown as being
 from acceptor to offerrer.
 However, actual protocols built on top may have the preimage be
 sent from the HTLC-in-sidepool offerrer to the acceptor.
-For example, there maybe an HTLC in a Lightning Network channel
+For example, there may be an HTLC in a Lightning Network channel
 that goes from the "acceptor" above to the "offerrer" above, with
 an earlier absolute lock time, so that the "offerrer" here (which
 is the acceptor in the Lightning Network HTLC) sends the preimage

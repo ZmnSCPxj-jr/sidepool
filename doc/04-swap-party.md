@@ -1110,7 +1110,7 @@ the amount of the output that will be consumed.
 Each entry also includes a [BIP-340][] signature that is signed
 with the same Taproot X-only Pubkey of the output to be consumed.
 
-The signatures in `swap_party_contrat_request_prevouts_signed`
+The signatures in `swap_party_contract_request_prevouts_signed`
 sign a [BIP-340 Design][] tagged hash:
 
     tag = "sidepool version 1 contraction phase"
@@ -1145,7 +1145,9 @@ entry in the `swap_party_contract_request_prevouts_signed`
 > contributions from multiple parties already, and if any of the
 > outputs consumed are also aggregated, would require an
 > aggregate-within-aggregate, with attendant complexity in
-> implementing the aggregation of aggregates signing algorithm.
+> implementing the aggregation of aggregates signing algorithm, as
+> well as potentially increasing complexity of higher-level
+> protocols.
 
 `swap_party_contract_request_newout` indicates the new output that
 will be created on consumption of the indicated previous outputs.
@@ -1551,3 +1553,86 @@ pool leader proceeds:
   `swap_party_contract_done` message, then the pool leader
   initiates the Reseat Phase as described in [SIDEPOOL-05][].
 * Otherwise, the pool leader can now forget about the swap party.
+
+Swap Parties And Higher-Level Protocols
+=======================================
+
+> **Non-normative** This section describes what the specification
+> author believes to be best practice, but is not a strict
+> requirement for conformance to the specification.
+
+Roughly speaking, the swap party is the primary point of
+interaction between sidepools and higher-level protocols.
+
+A sidepool software might want to provide some "hooks" for
+software implementing higher-level protocols built on top of it.
+Roughly, such a software might have a sequence diagram
+approximately like the below:
+
+                                   Generic                      High-level
+     Leader                        Follower                      Protocol
+        |                             |                              |
+        |      swap_party_begin       |                              |
+        |---------------------------->|  (swap party started notif)  |
+        |                             |----------------------------->|
+        |                             |                              |
+        |                             |                 +--------------------------+
+        |                             |                 |   Decide to run or not   |
+        |                             |                 |   Negotiate with peers   |
+        |                             |                 |  Figure out new outputs  |
+        |                             |                 +--------------------------+
+        |                             |                              |
+        |                             |     (request new outputs)    |
+        |                             |<-----------------------------|
+        |  swap_party_expand_request  |                              |
+        |<----------------------------|                              |
+        |                             |                              |
+        |                             |                              |
+        |   swap_party_expand_state   |                              |
+        |---------------------------->|                              |
+        |                             |                              |
+        |                +-------------------------+                 |
+        |                |   Check if new outputs  |                 |
+        |                |      were created       |                 |
+        |                +-------------------------+                 |
+        |                             |                              |
+        |   swap_party_expand_sign    |                              |
+        |<----------------------------|                              |
+        |                             |                              |
+        |                             |                              |
+        |    swap_party_expand_done   |                              |
+        |---------------------------->|                              |
+        |                             |                              |
+        |                          Generic                      High-level
+     Leader                        Follower                      Protocol
+        |                             |                              |
+        |                             | (outputs were created notif) |
+        |                             |----------------------------->|
+        |                             |                              |
+        |                             |                 +--------------------------+
+        |                             |                 |Acquire/Release control of|
+        |                             |                 |   outputs from/to peers  |
+        |                             |                 +--------------------------+
+        |                             |                              |
+        |                             |   (request to claim output)  |
+        |                             |<-----------------------------|
+        | swap_party_contract_request |                              |
+        |<----------------------------|                              |
+        |                             |                              |
+        |                             |                              |
+        |  swap_party_contract_state  |                              |
+        |---------------------------->|                              |
+        |                             |                              |
+        |                             |                              |
+        |  swap_party_contract_sign   |                              |
+        |<----------------------------|                              |
+        |                             |                              |
+        |                             |                              |
+        |   swap_party_contract_done  |                              |
+        |---------------------------->|                              |
+        |                             |                              |
+        |swap_party_contract_done_ack |                              |
+        |<----------------------------|    (outputs claimed notif)   |
+        |                             |----------------------------->|
+        |                             |                              |
+

@@ -8,7 +8,7 @@ specified in [SIDEPOOL-02 Pool Update Counter][].
 Once a pool has reached the maximum number of updates, it can
 only be closed.
 
-[SIDEPOOL-02 Pool Update Counter]: https://github.com/ZmnSCPxj-jr/sidepool/blob/master/doc/02-transactions.md#pool-update-counter
+[SIDEPOOL-02 Pool Update Counter]: ./02-transactions.md#pool-update-counter
 
 Rather than always closing the pool when the maximum number of
 updates has been reached, sidepool version 1 pools instead
@@ -120,11 +120,11 @@ In a weighted median, each sample has a weight that is associated
 with them.
 We take the sum total weight of all samples, and after sorting
 them, we iterate starting from the first (lowest) sample.
-We accumulate weights, and once an entry causes the accumulated to
-equal or exceed half the total weight, that entry is selected as
-the weighted median.
-If all samples had the same weight, then the weighted median is
-the same as the median.
+We accumulate weights, and once an entry causes the accumulated
+weight to equal or exceed half the total weight, that entry is
+selected as the weighted median.
+If all samples had the same non-zero weight, then the weighted
+median is the same as the median.
 
 The weight used is the size of the funds that a participant has
 direct control of in the sidepool, effectively weighting the
@@ -133,22 +133,71 @@ feerates according to their stake in the sidepool.
 By using a weighted median, sockpuppets need to be funded, which
 increases the barrier against the above attack.
 
-The fee negotiation scheme above is done for the following
-operations:
+Fee Computation For Splice
+--------------------------
 
-* Cooperative close - All participants partake in the fee
-  negotiation, and their fee rate samples are weighted according
-  to the funds inside the sidepool that they unilaterally control.
-  Fees are deducted from each output in the output state.
-* Reseat - All participants partake in the fee negotiation, and
-  their fee rate samples are weighted according to the funds
-  inside the sidepool that they unilaterally control.
-  Fees are deducted from each output in the output state.
-* Splice - Only participants that splice-in or splice-out
-  participate in the fee negotiation, with the fee rate samples
-  weighted according to the amount they splice in or splice out.
-  Fees are deducted from the respective splice-in and splice-out
-  amounts; outputs in the current output state, which are not
-  splice out, are not changed.
+The Reseat transaction is a single transaction that includes
+splice-ins and splice-outs.
+As such, the Reseat transaction has a single onchain transaction
+fee ratek065l.
 
-(TODO)
+We separate the onchain fees paid by in-sidepool funds, from the
+fees paid by participants that splice-in and splice-out.
+
+In-sidepool funds pay for:
+
+* Common parts of the transaction.
+* The transaction input that spends the current funding
+  transaction output.
+* The new funding transaction output.
+
+The fees for the above parts are divided among all the outputs
+in the output state at the end of the preceding Contraction
+Phase.
+This division may result in a remainder, which is an overpayment
+of the fees.
+
+In contrast:
+
+* For a splice-in, the fee cost of that input (`prevout`,
+  `scriptSig`, and `witness`) is deducted from the input amount
+  before it is instantiated as a new output in the output state.
+* For a splice-out, the fee cost of that output (`scriptPubKey`
+  and `amount`) is deducted from the nominal amount before it is
+  instantiated as an output amount of the splice-out.
+
+Splice-in Holding Address
+=========================
+
+In sidepool version 1 pools, funds for splicing in are first
+placed into a holding UTXO.
+The address for that holding UTXO is a Taproot address:
+
+* The internal public key is the aggregate pool public key as
+  described in [SIDEPOOL-02 Intermediate Output Addresses][].
+* A single Tapleaf:
+  * Refund branch:
+    Version 0xC0 SCRIPT
+    `<relative 2016 blocks> OP_CHECKSEQUENCEVERIFY OP_DROP <X-only pubkey> OP_CHECKSIG`
+
+[SIDEPOOL-02 Intermediate Output Addresses]: ./02-transactions.md#intermediate-output-addresses
+
+The fund can then be spliced-in, if:
+
+* The owner of the fund is a participant of the pool, and
+  provides the `<X-only pubkey>` above to the pool leader
+  (which broadcasts it to the pool followers on the next swap
+  party on announcement of a Rseeat) via standard SIDEPOOL
+  messages.
+* The fund is still unspent.
+* The confirmation depth of the transaction holding the fund
+  is strictly `6 <= depth <= 1008`.
+* The current aggregate pool public key of the sidepool matches
+  the one in the splice-in holding address.
+  * There is an edge case where the fund reaches the minimum 6
+    depth confirmations just *after* a Reseat has occurred.
+    As it has not reached depth 6 yet the fund cannot be added to
+    that Reseat, and the Reseat will rotate the aggregate public
+    key, thus failing this condition on the next swap party.
+
+
