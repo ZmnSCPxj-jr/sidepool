@@ -178,7 +178,7 @@ The address for that holding UTXO is a Taproot address:
 * A single Tapleaf:
   * Refund branch:
     Version 0xC0 SCRIPT
-    `<relative 2016 blocks> OP_CHECKSEQUENCEVERIFY OP_DROP <X-only pubkey> OP_CHECKSIG`
+    `<relative 1008 blocks> OP_CHECKSEQUENCEVERIFY OP_DROP <X-only pubkey> OP_CHECKSIG`
 
 [SIDEPOOL-02 Intermediate Output Addresses]: ./02-transactions.md#intermediate-output-addresses
 
@@ -191,7 +191,7 @@ The fund can then be spliced-in, if:
   messages.
 * The fund is still unspent.
 * The confirmation depth of the transaction holding the fund
-  is strictly `6 <= depth <= 1008`.
+  is strictly `6 <= depth <= 576`.
 * The current aggregate pool public key of the sidepool matches
   the one in the splice-in holding address.
   * There is an edge case where the fund reaches the minimum 6
@@ -200,4 +200,4 @@ The fund can then be spliced-in, if:
     that Reseat, and the Reseat will rotate the aggregate public
     key, thus failing this condition on the next swap party.
 
-
+(TODO)

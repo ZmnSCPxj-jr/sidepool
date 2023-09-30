@@ -50,6 +50,46 @@ letting it effectively deploy more funds to the Lightning Network
 while being less reliant on guessing which specific nodes are
 likely to be common destinations in the future.
 
+Sidepools are an alternative to the use of faster sidechains, as
+follows:
+
+* Practically all Bitcoin-using sidechains are federated
+  sidechains, which are technically k-of-n custodians.
+  Sidepools are non-custodial, extending the same argument that
+  a 2-of-2 Lightning Network channel is non-custodial to n-of-n
+  sidepools.
+* Even if the sidechain is faster than Bitcoin blockchain, to
+  reduce counterparty risk you want to periodically move funds from
+  the sidechain to the Bitcoin blockchain anyway.
+  You might as well schedule rebalancings of your channels to a
+  slower cadence, to allow your channels to move away from
+  perfectly balanced and then reset them to balanced, and it is
+  not necesary to use a *faster* blockchain for that.
+
+Sidepools are an alternative to the use of full-fledged CoinPools:
+
+* Sidepools can be implemented with no changes to Bitcoin beyond
+  Taproot.
+  CoinPools and similar would require base layer changes.
+
+Sidepools are an alternative to the use of channel factories:
+
+* Channel factories *can* be implemented with current
+  Taproot-enabled Bitcoin.
+  However, merely riding high-volume high-speed channels on top of
+  a slow Decker-Wattenhofer (which is what sidepools use) is
+  already a significant software complexity increase.
+  By putting the liquidity management "to the side" of existing
+  Lightning Network chanenls instead of "around" them:
+  * There is reduced complexity, as there is no need to implement
+    channels-within-factories.
+  * Existing channels can be used with sidepools; payers do not
+    need to be updated to learn about channels inside channel
+    factories, and existing channels can continue to remain open
+    and retaining any scoring that external scorers may have
+    assigned to those channels, while still allowing liquidity
+    management.
+
 Pool Leaders And Followers
 ==========================
 
@@ -174,10 +214,113 @@ Sidepool Feature Bit
 ====================
 
 Nodes that support the SIDEPOOL protocol MUST set feature bit
-1263 (`sidepool_feature_bit`) in their `init` messages and in
+1263 (`sidepool_bolt_feature_bit`) in their `init` messages and in
 their `node_annoucement`s.
 
 Nodes that support the SIDEPOOL protocol MUST NOT send
 `sidepool_message_id` (53609) messages if the counterparty does
 not signal support via `sidepool_feature_bit` (1263) in their
 `init` message.
+
+SIDEPOOL-protocol Feature Set
+=============================
+
+The SIDEPOOL protocol also includes a "feature bits" concept
+similar to that specified in the Lightning Network BOLT
+specifications.
+
+The SIDEPOOL feature bits are a separate set from any of the
+Lightning Network BOLT feature bits.
+
+The "it's okay to be odd" rule applies to SIDEPOOL feature bits in
+the following manner:
+
+* If the counterparty has an even feature bit that you do not
+  recognize, you MUST NOT send any `sidepool_message_id` messages
+  to that counterparty.
+  * Otherwise, you may send any `sidepool_message_id` messages to
+    the counterparty, provided the sub-messages are allowed by the
+    set of features the counterparty indicates.
+
+Participants MUST always support The "basic set" of protocols,
+described in [SIDEPOOL-01][], [SIDEPOOL-03][], [SIDEPOOL-04][],
+and [SIDEPOOL-05][].
+The above protocols MAY be used without any feature bits being set.
+However, participants MUST NOT send any other messages other than
+`my_sidepool_feature` below until they have received a
+`my_sidepool_feature` message from the peer.
+
+[SIDEPOOL-01]: ./01-overview-and-conventions.md
+[SIDEPOOL-03]: ./03-setup-and-teardown.md
+[SIDEPOOL-04]: ./04-swap-party.md
+[SIDEPOOL-05]: ./05-reseat-splice.md
+
+In addition, the encoding of SIDEPOOL feature bits is
+significantly different.
+Briefly, it is the varsize-encoded run-length-encoding of an
+array of bits.
+
+This array of bits is a variable-length array whose individual bits
+can be indexed.
+For example, suppose a feature set has bits 1, 2, and 42 set.
+The array could be represented as:
+
+```JSON
+[0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]
+```
+
+The encoding is done this way:
+
+* Limit the array of bits to the highest non-zero bit.
+* Start at the array start.
+* Count the number of 0s, then emit it as a `varsize`:
+  * If the value is `< 0xFD`, emit it as a single byte.
+  * If the value is `0xFD <= x <= 0xFFFF`, emit `0xFD` and then a
+    16-bit unsigned integer in big-endian order.
+  * If the value is `0x10000 <= x <= 0xFFFFFFFF`, emit `0xFE` and
+    then a 32-bit unsigned integer in big-endian order.
+  * Otherwise, emit `0xFF` and then a 64-bit unsigned integer in
+    big-endian order,
+  * (This is the same as the encoding of Type and Length in TLVs)
+* Skip over the 1.
+  If we are now at the end of the array (i.e. the highest set bit),
+  stop, otherwise repeat the above step.
+
+So a feature set with feature bits 1, 2, and 42 will be encoded as
+the following hex dump:
+
+```
+0x01 0x00 0x27
+```
+
+If the set of feature bits is empty, then the encoding is a 0-length
+sequence of bytes, i.e. the encoding is also empty.
+
+To decode:
+
+* Clear the array of bits.
+* Read a `varsize` from the encoding.
+  Emit that number of 0s, then emit a 1.
+* If we are at the end of the encoding, stop, otherwise repeat the
+  above step.
+
+At connection establishment of the Lightning Network connection:
+
+* Check if the BOLT-1 `init` message from the counterparty has the
+  `sidepool_bolt_feature_bit` set, OR the counterparty has this
+  feature bit set in its `node_announcement`.
+  If so:
+  * Send the `my_sidepool_features` message to the counterparty.
+
+The `my_sidepool_features` message encodes the SIDEPOOL feature
+set, as described above:
+
+1.  `my_sidepool_features` (101)
+    - Sent by SIDEPOOL-aware participants at connection
+      establishment.
+2.  TLVs:
+    * `my_sidepool_features_Set` (10100)
+      - Length: Variable.
+      - Value: The encoded feature set, as described above.
+      - Required.
+
