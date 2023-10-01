@@ -247,8 +247,8 @@ described in [SIDEPOOL-01][], [SIDEPOOL-03][], [SIDEPOOL-04][],
 and [SIDEPOOL-05][].
 The above protocols MAY be used without any feature bits being set.
 However, participants MUST NOT send any other messages other than
-`my_sidepool_feature` below until they have received a
-`my_sidepool_feature` message from the peer.
+`my_sidepool_features` below until they have received a
+`my_sidepool_features` message from the peer.
 
 [SIDEPOOL-01]: ./01-overview-and-conventions.md
 [SIDEPOOL-03]: ./03-setup-and-teardown.md
@@ -266,7 +266,13 @@ For example, suppose a feature set has bits 1, 2, and 42 set.
 The array could be represented as:
 
 ```JSON
-[0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]
+[ 0, 1, 1, 0, 0, 0, 0, 0,
+  0, 0, 0, 0, 0, 0, 0, 0,
+  0, 0, 0, 0, 0, 0, 0, 0,
+  0, 0, 0, 0, 0, 0, 0, 0,
+  0, 0, 0, 0, 0, 0, 0, 0,
+  0, 0, 1
+]
 ```
 
 The encoding is done this way:
@@ -319,8 +325,116 @@ set, as described above:
     - Sent by SIDEPOOL-aware participants at connection
       establishment.
 2.  TLVs:
-    * `my_sidepool_features_Set` (10100)
+    * `my_sidepool_features_set` (10100)
       - Length: Variable.
       - Value: The encoded feature set, as described above.
       - Required.
 
+MuSig2
+======
+
+Sidepool participants use a "true multisignature", where a single
+public key represents all of the sidepool participants.
+
+Sidepool version 1 uses MuSig2, as described in [BIP-327][].
+
+[BIP-327]: https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki
+
+Sidepool participants need to generate n-of-n aggregate public
+keys in various contexts.
+The aggregation of public keys is described in [BIP-327 Key
+Generation and Aggregation][].
+In some contexts, there is a need to aggregate private keys;
+while not described in detail, operations homomorphic to public
+key (SECP256K1 curve points) operations can be performed in the
+private key (scalars of the SECP256K1 group order).
+
+[BIP-327 Key Generation and Aggregation]: https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki#user-content-Key_Generation_and_Aggregation
+
+Non-Persistent MuSig2
+---------------------
+
+In sidepool implementations, MuSig2 signing sessions MUST be
+*non-persistent*.
+This simply means that the secret used to generate nonces for a
+MuSig2 signing session is stored only in memory, and not saved in
+persistent storage.
+
+During a MuSig2 signing session, participants need to generate
+and retain a structure, called `secnonce` in [BIP-327 Nonce
+Generation][].
+Participants first need to generate `secnonce`, then derive a
+structure called `pubnonce`, the latter of which is then sent to
+the pool leader, which aggregates the `pubnonce`s into an
+`aggnonce`, as per [BIP-327 Nonce Aggregation][].
+The pool leader then broadcasts the `aggnonce` to the pool
+followers, which then need the `secnonce` to generate their
+partial signatures together with the `aggnonce`, as per
+[BIP-327 Signing][].
+
+[BIP-327 Nonce Generation]: https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki#user-content-Nonce_Generation-2
+[BIP-327 Nonce Aggregation]: https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki#user-content-Nonce_Aggregation
+[BIP-327 Signing]: https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki#user-content-Signing
+
+Pool participants MUST NOT store the `secnonce`, or equivalent
+structure, in persistent storage.
+Pool participants SHOULD store these structures in non-swappable
+memory.
+
+> **Rationale** If a `secnonce`-equivalent is stored on-disk, and
+> then that participant crashes, the human operator may
+> accidentally recover a snapshot of the `secnonce`-equivalent
+> from before the software has sent a partial signature, even
+> though the software has actually already sent the partial
+> signature.
+> If a counterparty detects this situation, then it could induce
+> the software to send a different partial signature for a
+> different version of the transaction, but with the same nonces,
+> allowing exflitration of the private key.
+>
+> This is in contrast with plans for Lightning Network Taproot
+> channels, where the nonces for the next signing session are
+> sent with the partial signatures of the current signing
+> session, implying that MuSig2 signing rounds are stored in
+> persistent storage, i.e. persistent MuSig2.
+> This makes more sense for Lightning Network channels in order
+> to reduce latency and thereby increase actions-per-second.
+> In the case of sidepools, updates to the sidepool are relatively
+> much rarer than in the Lightning Network, and extra latency is
+> negligible in comparison.
+
+Pool participants MUST persistently store only the completed
+MuSig2 aggregate signature after it has locally validated that
+the aggregate signatures are valid.
+
+Once a pool participant has generated its partial signature, the
+pool participant MUST delete the `secnonce`-equivalent before
+sending the partial signature to the pool leader (or for the pool
+leader, before it adds its partial signature to the aggregate
+signature):
+
+* The memory storing it SHOULD be securely zeroed out in a way
+  that is not optimized out by compilers or other language
+  interpretation tools.
+  * Production-quality implementations MUST securely zero out
+    the memory.
+* The memory MUST be freed, or in a memory-managed environment,
+  all references to it dropped.
+
+> **Rationale** Deleting the `secnonce` as soon as the partial
+> signature is generated reduces the scope in which bugs or
+> other unexpected behavior could cause the software to sign
+> different messages with the same nonce.
+
+A further implication is that in case of a crash before the
+partial signature can be computed, the software cannot recover the
+`secnonce`, which is required to generate a partial signature (and
+from there, the aggregate signature).
+This implies that in case of a crash during a sidepool update, the
+only recovery is to abort the entire sidepool (i.e. drop it
+onchain unilaterally).
+
+> **Rationale** A sidepool abort due to a crash during a state
+> update is expected to be rare due to state updates being rare.
+> More complex crash recovery is possible, but these increase the
+> risk of private key exfiltration, as noted above.

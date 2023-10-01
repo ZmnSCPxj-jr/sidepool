@@ -111,11 +111,11 @@ As a concrete example:
   * Participant A "twice our-side funds" is (1 + 1000 - 995) = 6.
     * This is equivalent to "our-side funds" being 3 millisatoshi
       (half of 6, the "*twice* our-side funds"):
-      1 millisatoshi and half of the HTLCs being 4 millisatoshis,
-      or 2.
+      1 millisatoshi owned unambiguously by A and half of the
+      HTLCs being 4 millisatoshis, or 2, summing to 3.
   * Participant B "twice our-side funds" is (995 + 1000 - 1)
     = 1994, equivalent to saying it has 997 millisatoshis (995
-    unambiguous, 2 from its share of the HTLCs).
+    unambiguously owned by B, 2 from its share of the HTLCs).
   * "imbalance error" is 994; this is the same for both
     participants (= absolute(1000 - 6) = absolute(1000 - 1994)).
 
@@ -130,23 +130,26 @@ As a concrete example:
 > point" that is half the total channel capacity, i.e. the total
 > of all channel capacities, divided by 2.
 >
+> As both are divided by 2, we can cancel out the division on both
+> sides of the comparison.
+>
 > The score described above is thus twice the actual imbalance
 > error in millisatoshis.
 > However, by avoiding division by two and instead effectively
 > multiplying both sides by 2, we avoid issues when using integer
 > division and round-up vs round-down.
 >
-> Another way of viewing it is that the resulting variables are
-> actually a fixed-point format where the binary point is after
+> Another way of viewing it is that the resulting imbalance error
+> is actually a fixed-point format where the binary point is after
 > the lowest bit, i.e. the lowest bit is the fractional part,
-> represneting half-millisatoshi amounts.
+> representing half-millisatoshi amounts.
 
 > **Rationale** The computation is described in detail above to
 > ensure that all implementations use the same calculation and
 > avoid disagreements.
 > Yes, it is a given that the above is ***only*** an estimation,
 > and that information about pending HTLCs, their size, their
-> hash, their age, and who sent what, and at what time, can be
+> hash, their age, who offerred them, and at what time, can be
 > used to better determine whether it is likely that the HTLC will
 > be fulfilled or not, and from there assign a probability
 > estimate times HTLC amount to the correct participant.
@@ -165,36 +168,43 @@ The rules for offering peerswap-in-sidepool are:
 * If a participant has "twice our-side funds" as equal or
   greater than "total channel capacity", then the counterparty
   is the one that is allowed to offer peerswap-in-sidepool and
-  this participant MUST NOT offer peerswap-in-sidepool.
+  this participant MUST NOT offer a peerswap-in-sidepool.
 * Conversely, if a participant has "twice our-side funds" as
   less than "total channel capacity", then it MAY offer a
   peerswap-in-sidepool:
-  * The participant, if it offers a peerswap, SHOULD offer an
-    amount equal to half of the difference between its
-    "twice our-side funds" and "total chanel capacity".
-    "Half" can be rounded either way.
-    It MAY offer anywhere from 1 millisatoshi, to one less than
-    the difference between "total channel capacity" and "twice
-    our-side funds" (i.e. the imbalance error), inclusive.
+  * If the imbalance error is less than the minimum amount
+    mandated in [SIDEPOOL-02 Output States][], then the
+    participant MUST NOT offer a peerswap-in-sidepool.
+  * Otherwise, SHOULD offer an amount equal to half of the
+    imbalance error, or the minimum amount specified, whichever is
+    higher, rounded either way to an exact satoshi value.
+    It MAY offer anywhere from the [SIDEPOOL-02 Output States][]
+    minimum amount, to one less than the imbalance error,
+    inclusive, provided the offerred amount is an exact satoshi
+    value.
+
+[SIDEPOOL-02 Output States]: ./02-transactions.md#output-states
 
 When a participant receives a peerswap-in-sidepool offer:
 
 * If the receiver "twice our-side funds" is less than the
-  "total channel capacity", then reject the peerswap
+  "total channel capacity", then reject the peerswap.
 * Otherwise, if the offered peerswap amount is greater than or
-  equal to the "imbalance error", or is 0, then reject the
-  peerswap.
-* Otherwise, offered peerswap amount is non-zero and is less
-  than the "imbalance error":
-  * If the funds unambiguously on our side are less than that,
-    rejeft the peerswap.
+  equal to the "imbalance error", or is less than the minimum
+  amount specified in [SIDEPOOL-02 Output States][], then reject
+  the peerswap.
+* Otherwise:
+  * If the funds unambiguously on our side are less than the
+    offerred amount, reject the peerswap.
   * Otherwise, accept the peerswap.
 
 > **Rationale** The above follows "be strict in what you send,
 > lenient in what you accept": the offerrer should offer a
 > peerswap that causes the imbalance error to drop to 0 or close
-> to 0, but the aceptor must accept anything that causes the
-> imbalance error to become lower.
+> to 0 (= half the imbalance error), but the aceptor must accept
+> anything that causes the imbalance error to become lower (if
+> the imbalance is such that the offerrer has less funds, any
+> amount lower than the imbalance error improves the balance).
 >
 > As a concrete example, suppose that participants A and B have a
 > 1000 millisatoshi channel; A has 1 millisatoshis and B has 999
@@ -209,6 +219,10 @@ When a participant receives a peerswap-in-sidepool offer:
 > Participant B should accept such an offer, even though it does
 > not reduce the imbalance error to 0; as long as the imbalance
 > error goes lower, it is still a better situation.
+>
+> If participant A had instead offerred half of the imbalance
+> error (= 998 / 2 = 499) then the new state would have been the
+> perfect A has 500 millisatoshis and B has 500 millisatoshis.
 >
 > Such leeway is allowed since forwardable peerswaps, described
 > below, would result in offerring peerswaps that do not move
@@ -243,6 +257,22 @@ When a participant receives a peerswap-in-sidepool offer:
 > sampled states do not cause rejections that would still have
 > benefited the channel balance.
 
+> **Rationale** Targeting a "perfectly balanced" 50-50 split stems
+> from the observation that as a Lightning Network channel is
+> used, its current balance is the integral of all payment flows
+> on that channel.
+>
+> Integrals, as anyone who has studied calculus knows, include a
+> `+ C` constant term.
+>
+> By always targeting the 50-50 split, the `+ C` constant for the
+> integral of payment flows becomes the 50-50 halfway point.
+> This maximizes the amount of space in which the balance (= the
+> integral of payment flows) can move in, which provides more
+> information to your node as to the general trend of payments
+> via that channel, which can then be used to drive other business
+> decisions.
+
 Forwaradable Peerswaps
 ======================
 
@@ -269,18 +299,22 @@ Forwardable peerswaps have the following benefits:
   participant have a coherent global view of the entire network.
 
 Forwardable peerswaps simply require that peerswap-related messages
-be forwarded back and forth, with any necessary changes done by the
-forwarder.
+be forwarded back and forth, with necessary changes to those
+messages done by the forwarder.
+In effect, the forwarder acts as a proxy between the direct
+offerrer and the direct acceptor (either or both of which may also
+be forwarders).
 
-Sidepool participants SHOULD implement forwardable peerswaps.
+Sidepool participants SHOULD implement forwardable peerswaps in
+sidepools.
 
 Forwardable Peerswap Algorithm
 ------------------------------
 
 > **Non-normative** This section is a recommendation on how to
-> implement forwardable peerswaps within a sidepool, such that all
-> peerswaps occur in a single swap party, but does not have to be
-> followed strictly for compliance with this specification.
+> implement forwardable peerswaps within a sidepool, such that
+> more peerswaps occur in a single swap party, but does not have
+> to be followed strictly for compliance with this specification.
 
 When a swap party is initiated by the pool leader:
 

@@ -83,6 +83,8 @@ more communication rounds and more complexity and more state.
 > and modern I/O libraries and I/O OS software would maintain
 > caches and buffers all the way from the sidepool software to
 > libraries down to the network buffers.
+> It may seem strange to be so careful about BIP-327 `secnonce`s
+> yet willing to transfer private keys to counterparties.
 >
 > Against the above, we observe that:
 >
@@ -91,6 +93,11 @@ more communication rounds and more complexity and more state.
 > 2.  A single private key is insufficient to gain control of the
 >     fund, as the fund is controlled by the MuSig combination
 >     of two keys.
+> 3.  Communications is done over BOLT #8 communications tunnnels,
+>     which are encrypted against third parties.
+> 4.  Ephemeral keys are still not saved in persistent storage,
+>     protecting against naive operators who back up the
+>     persistent storage including private keys.
 >
 > Thus the risk is considered low.
 >
@@ -139,6 +146,12 @@ Both offerrer and acceptor MUST store their persistent private
 keys, or how to derive them from their root private key, in
 persistent storage.
 
+However, offerrer and acceptor MUST NOT store their ephemeral
+private keys in persistent storage, and SHOULD store them in
+non-swappable memory.
+Production-quality implementations MUST store them in
+non-swappable memory.
+
 In addition to that, hashlocked timelocked contracts also require
 a hash and an absolute block height lock time.
 Both offerrer and acceptor MUST store these information in
@@ -155,10 +168,10 @@ The HTLC Taproot Public Key is then derived as follows:
   public key, as per [BIP-327 Public Key Aggregation][].
 * Generate two 0xC0 Tapleaf SCRIPTs:
   * `OP_HASH160 <RIPEMD160(hash)> OP_EQUALVERIFY <acceptor persistent public key> OP_CHECKSIG`.
-  * `<absolute lock time> OP_CHECKLOCKTIMEVERIFY OP_DROP <1 relative block> OP_CHECKSEQUENCEVERIFY OP_DROP <offerrer persistent public key> OP_CHECKSIG`.
-* Combine the above Tapleaf SCRIPTs into a Taproot Merkle
-  Abstract Syntax Tree and tweak the internal public key,
-  as per [BIP-341 Constructing And Spending Taproot Outputs][].
+  * `<1> OP_CHECKSEQUENCEVERIFY <absolute lock time> OP_CHECKLOCKTIMEVERIFY OP_DROP<offerrer persistent public key> OP_CHECKSIGVERIFY`.
+* Combine the above Tapleaf SCRIPTs into a Taproot Merkle Abstract
+  Syntax Tree and tweak the internal public key, as per [BIP-341
+  Constructing And Spending Taproot Outputs][].
 
 [BIP-327 Public Key Aggregation]: https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki#user-content-Public_Key_Aggregation
 [BIP-341 Constructing And Spending Taproot Outputs]: https://github.com/bitcoin/bips/blob/master/bip-0341.mediawiki#user-content-Constructing_and_spending_Taproot_outputs
@@ -192,21 +205,27 @@ the acceptor:
   that it can spend the HTLC via their respective branch in case
   of the "unhappy path" where the HTLC needs to be resolved on
   the blockchain.
-* SHOULD NOT store the ephemeral keypair in persistent storage,
+* MUST NOT store the ephemeral keypair in persistent storage,
   as it is unnecessary to keep this information beyond the HTLC
   "happy path" where it is resolved quickly.
+  * MAY store how to derive the ephemeral key from a root private
+    key that is more securely stored, provided the derivation
+    path and the ephemeral key cannot be used to synthesize the
+    root private key.
 
 The offerrer:
 
 * MUST NOT create the HTLC output in the sidepool (via
   `swap_party_expand_request`) until after it has saved the
-  internal public key into persistent storage.
+  internal public key and other HTLC details into persistent
+  storage.
 
 The acceptor:
 
 * MUST NOT sign off on the new state that completes the
   Expansion Phase (via `swap_party_expand_sign`) until after it
-  has saved the internal public key into persistent storage.
+  has saved the internal public key and other HTLC details into
+  persistent storage.
 
 Happy Path Spend
 ----------------
