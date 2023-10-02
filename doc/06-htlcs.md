@@ -168,7 +168,7 @@ The HTLC Taproot Public Key is then derived as follows:
   public key, as per [BIP-327 Public Key Aggregation][].
 * Generate two 0xC0 Tapleaf SCRIPTs:
   * `OP_HASH160 <RIPEMD160(hash)> OP_EQUALVERIFY <acceptor persistent public key> OP_CHECKSIG`.
-  * `<1> OP_CHECKSEQUENCEVERIFY <absolute lock time> OP_CHECKLOCKTIMEVERIFY OP_DROP<offerrer persistent public key> OP_CHECKSIGVERIFY`.
+  * `<1> OP_CHECKSEQUENCEVERIFY <absolute lock time> OP_CHECKLOCKTIMEVERIFY OP_DROP <offerrer persistent public key> OP_CHECKSIGVERIFY`.
 * Combine the above Tapleaf SCRIPTs into a Taproot Merkle Abstract
   Syntax Tree and tweak the internal public key, as per [BIP-341
   Constructing And Spending Taproot Outputs][].
@@ -378,6 +378,10 @@ after BOLT #8 decryption.
 > As long as the sidepool implementation itself is secure against
 > exploits, no other part of the overall node is exposed to the
 > handed-over private key.
+>
+> This is technically an encryption-within-encryption that is
+> superfluous, but is necessary as a defense-in-depth against
+> irreducible software complexity.
 
 Prior to private key handover, by necessity, both participants
 MUST exchange the ephemeral public keys (as it is needed to form
@@ -433,64 +437,66 @@ key to participant B:
   generate the private key corresponding to the aggregate
   ephemeral public key.
 
-    Participant A
-
-       CSPRNG -------> enc prv key ------------+
-                             |                 |
-      A eph prv key ---------(------+     +---------+
-      A eph pub key          |      |     | times G |
-                             |      |     +---------+
-      B eph pub key ------+  |      |          |
-                          |  |      |     enc pub key
-                          v  v      |          |
-                       +--------+   |          |
-                       |  ECDH  |   |          |
-                       +--------+   |          |
-                            |       |          |
-                            v       v          |
-                         +-------------+       |
-                         |     XOR     |       |
-                         +-------------+       |
-                                |              |
-                        enc A eph prv key      |
-                                |              |
-                                v              v
-                           +----------------------+
-                           |         CAT          |
-                           +----------------------+
-    Participant A                     |
-    --------------------------------- v ------------------------
-                                  .:| | |:.
-                            Magic `:| | |:'
-       THE CRUEL WORLD      BOLT8 ^:| | |:-
-                           Tunnel ,:| | |:.
-                                  `:| | |:,
-    --------------------------------- v ------------------------
-    Participant B                     |
-                                      |
-      A eph pub key                   |
-                                      |
-      B eph prv key ------------------(------------------+
-      B eph pub key                   |                  |
-                                      v                  |
-                           +----------------------+      |
-                           |         CUT          |      |
-                           +----------------------+      |
-                             |                  |        |
-                     enc A eph prv key     enc pub key   |
-                             |                  |        |
-                             |                  v        v
-                             |               +--------------+
-                             |               |     ECDH     |
-                             |               +--------------+
-                             +--------------------+ |
-                                                  | |
-                                                  v v
-                                               +-------+
-                                               |  XOR  |
-                                               +-------+
-                                                   |
-                                  YAY! --->  A eph prv key
+```
+     Participant A
+     .
+        CSPRNG -------> enc prv key ------------+
+                              |                 |
+       A eph prv key ---------(------+     +---------+
+       A eph pub key          |      |     | times G |
+                              |      |     +---------+
+       B eph pub key ------+  |      |          |
+                           |  |      |     enc pub key
+                           v  v      |          |
+                        +--------+   |          |
+                        |  ECDH  |   |          |
+                        +--------+   |          |
+                             |       |          |
+                             v       v          |
+                          +-------------+       |
+                          |     XOR     |       |
+                          +-------------+       |
+                                 |              |
+                         enc A eph prv key      |
+                                 |              |
+                                 v              v
+                            +----------------------+
+                            |         CAT          |
+                            +----------------------+
+      Participant A                    |
+     --------------------------------- v ------------------------
+                                   .:| | |:.
+                             Magic `:| | |:'
+        THE CRUEL WORLD      BOLT8 ^:| | |:-
+                            Tunnel ,:| | |:.
+                                   `:| | |:,
+     --------------------------------- v ------------------------
+     Participant B                     |
+                                       |
+       A eph pub key                   |
+                                       |
+       B eph prv key ------------------(------------------+
+       B eph pub key                   |                  |
+                                       v                  |
+                            +----------------------+      |
+                            |         CUT          |      |
+                            +----------------------+      |
+                              |                  |        |
+                      enc A eph prv key     enc pub key   |
+                              |                  |        |
+                              |                  v        v
+                              |               +--------------+
+                              |               |     ECDH     |
+                              |               +--------------+
+                              +--------------------+ |
+                                                   | |
+                                                   v v
+                                                +-------+
+                                                |  XOR  |
+                                                +-------+
+                                                    |
+                                   YAY! --->  A eph prv key
+```
 
 > **Rationale** Both the data to encrypt (i.e. the participant A
 > ephemeral private key), and the symmetric encryption key
@@ -500,6 +506,29 @@ key to participant B:
 > A simple XOR reduces the code that is directly exposed to
 > the private key being handed over to only a very simple
 > loop that does XOR between two fixed-length byte arrays.
+
+> **Non-normative** A participant handing over its ephemeral
+> private key to the other participant implies that the sending
+> participant intends to release full control of the fund to the
+> other participant, meaning that the sending participant no
+> longer has any interest in retaining any kind of even partial
+> control of the fund.
+>
+> As it is no longer interested in control of the fund, the
+> sending participant can, and should, securely erase its copy
+> of its ephemeral private key as soon as it is encrypted and
+> sendable to the counterparty.
+>
+> Thus, it is recommended that the XOR operation be done "in
+> place", i.e. overwriting the buffer that contains the ephemeral
+> private key being handed over.
+> This simultaneously destroys the local copy of the private key
+> being handed over, which is fine since the sender no longer
+> intends to make use of it, which reduces the scope in which the
+> ephemeral private key is available locally in cleartext.
+> This is also unlikely to be optimized away by compilers or
+> language interpreters, as the buffer would then be used to send
+> data to external I/O.
 
 Sequence Diagrams
 =================

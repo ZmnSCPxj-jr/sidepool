@@ -355,6 +355,63 @@ When a swap party is initiated by the pool leader:
     errors of the pending-to-offer list, or the pending-to-offer
     list is empty, accept the incoming peerswap.
 
+Forwardable Peerswap Security
+-----------------------------
+
+While setting up a peerswap, the endpoint offerrer and the
+endpoint acceptor exchange some public keys, as described in
+[SIDEPOOL-06 HTLC Taproot Public Key][].
+
+[SIDEPOOL-06 HTLC Taproot Public Key]: ./06-htlcs.md#htlc-taproot-public-key
+
+The forwarding node cannot modify any of the public keys sent
+between endpoint offerrer and endpoint acceptor.
+Doing so would change what the endpoint offerrer and endpoint
+acceptor expect to see in the sidepool output state, causing the
+acceptor to believe that the peerswap did not push through (and
+thus stop responding), and causing the offerrer to believe that
+the acceptor aborted abnormally and that a sidepool abort is
+necessary.
+Any pool participant can already abort the entire sidepool at any
+time for any reason, or for no reason, and the forwarder must by
+necessity be a pool participant, so this is not an escalation.
+
+The forwarding node can replace the acceptor public key with its
+own so that it can acquire the funds, but again the endpoint
+acceptor will not see the expected output on the sidepool output
+state, and thus will not continue with the peerswap protocol.
+This is no different from the case where the forwarding ndoe did
+not forward in the first place and instead acted as the
+terminating endpoint acceptor, so this is not an escalation.
+
+During private key handover, as [SIDEPOOL-06 Secure Private Key
+Handover][] requires that the private key of one endpoint be
+encrypted to the public key of the other, the forwarding node
+cannot decrypt the handed-over private key either.
+As noted above, if the forwarding node had completely replaced the
+ephemeral public key of either side, then the peerswap does not
+continue.
+Even if the forwarding node *were* to get the handed-over private
+key, two private keys are needed anyway.
+
+[SIDEPOOL-06 Secure Private Key Handover]: ./06-htlcs.md#secure-private-key-handover
+
+Finally, there is no way for an endpoint acceptor, or an endpoint
+offerrer, to determine if its direct peer in the peerwswap is
+actually forwarding the peerswap or not.
+The forwarder acts as a proxy.
+There exists a virtualization argument:
+Any security flaw that exists in the forwarded case must by
+necessity exist in the non-forwaded case, as neither endpoint can
+be certain that they are talking to a proxy or not.
+In other words, a "real" endpoint offerrer or acceptor can be
+composed of multiple smaller components, one of which is directly
+talking to the "real" endpoint offerrer or acceptor and
+translating its communication in other ways to other components,
+and if the protocol is secure in that basic case, it is also
+secure in the case that the directly-communicating node is a full
+Lightning Network node.
+
 Protocol Flow Detail
 ====================
 
@@ -404,3 +461,123 @@ Protocol Flow Detail
 [SIDEPOOL-06 Secure Private Key Handover]: ./06-htlcs.md#secure-private-key-handover
 
 [BOLT #2 Forwarding HTLCs]: https://github.com/lightning/bolts/blob/master/02-peer-protocol.md#forwarding-htlcs
+
+Forwarding Peerswaps
+--------------------
+
+If a sidepool implementation also implements peerswap forwarding,
+then it needs to store a different set of data in persistent
+storage than from the endpoint offerrer and endpoint acceptor.
+
+The endpoint offerrer and endpoint acceptor need to generate or
+derive their persistent HTLC keys, and store the public persistent
+key of the other, as well as generate ephemeral HTLC keys, and
+store the aggregate ephemeral key once they have exchanged the
+ephemeral HTLC public keys.
+However, the forwarder does not need to store any of that, other
+than for logging purposes.
+
+What the forwarder MUST store is the forwarding relation between
+the direct offerrer and the direct acceptor.
+In particular, once the direct peerswap acceptor has given an HTLC
+in the Lightning Network channel, the forwarder MUST store this
+fact in persistent storage before it forwards the HTLC on the
+Lightning Network channel to the direct peerswap offerrer.
+
+The forwarder is not interested in any sidepool changes in state
+(unless it is acting as an endpoint peerswap offerrer or endpoint
+peerswap acceptor for a *different* peerswap), but MUST ensure
+that Lightning Network state is correct across different channels.
+
+In case the forwarder restarts and finds this fact in its
+persistent store:
+
+* If there is irrevocably committed no HTLC from the forwarder
+  to the direct peerswap offerrer, the forwarder SHOULD fail
+  the in-Lightning HTLC from the direct peerswap acceptor.
+  * This condition is either the in-Lightning HTLC was not
+    forwarded at all before the restart (i.e. `update_add_htlc`
+    was never sent), or the HTLC was forwarded but then failed.
+* Otherwise, the forwarder MUST wait for the in-Lightning
+  HTLC to the direct peerswap offerrer to be either fulfilled,
+  or irrevocably committed to fail, before fulfilling or failing
+  the in-Lightning HTLC from the direct peerswap aceptor.
+* The forwarder MUST handle the above even if the channel(s)
+  with the direct peerswap offerrer, or the direct peerswap
+  acceptor, have been unilaterally closed with the HTLCs
+  in-flight.
+
+> **Rationale** The above is already the behavior mandated by BOLT
+> for normal payment forwards.
+> However, actual Lightning Network node implementations might not
+> expose the code that implements this behavior to code built on
+> top of the implementation, including sidepool implementations
+> not deeply integrated into the node implementation.
+> This may preclude such implementations from being able to
+> implement peerswap forwarding, or require re-implementation of
+> that behavior in sidepool implementation code if the underlying
+> implementation exposes enough functionality to implement this
+> (such as CLN `htlc_accepted` hook, which are re-issued on
+> restart and thus on restart allow the incoming HTLC to remain
+> in-flight, but not LDK interception SCIDs, which fail the
+> incoming HTLCs on restart if forwarding is not delegated to
+> LDK; in particular, LDK forwarding requires a fee equal to or
+> greater than the normal channel fee to be charged, but this
+> specification mandates that peerswap forwarders do not charge a
+> fee in the Lightning part of the forwarded peerswap, CLN
+> allows you to override this if you implement the persistent
+> tracking of HTLC forwardings yourself).
+>
+> Due to the possible need to re-implement it for sidepool
+> implementations, the above requirements are re-iterated here.
+>
+> Even though the sidepool is supposed to abort if any participant
+> suffers a crash or restart during a swap party (as MuSig2
+> nonces are never persisted), the in-Lightning state is not
+> in-pool state, and thus changes state independently of what
+> happens with the sidepool.
+
+In subsequent sections, this specification defines what a
+forwarder must, should, and may do when forwarding a particular
+message.
+
+### 0-Fee Forwarded Peerswaps
+
+Forwarders MUST NOT deduct a fee between the in-Lightning HTLC
+from the direct peerswap acceptor and the in-Lightning HTLC to the
+direct peerswap offerrer.
+That is, the in-Lightning HTLC to the direct peerswap offerrer
+MUST exactly equal the in-Lightning HTLC from the direct peerswap
+acceptor.
+
+> **Rationale**
+>
+> * If a node does not want to forward peerswaps without being
+>   compensated, it can simply not forward (i.e. not implement
+>   peerswap forwarding, which is allowed but not recommended by
+>   this specification as a "SHOULD implement").
+>   HOWEVER:
+>   * If the node does not forward, and:
+>     * It has an imbalanced channel with another node that it
+>       *would* want to offer a peerswap to.
+>     * It currently has insufficient funds in the sidepool to
+>       actually offer a peerswap to that node.
+>   * ...then the node has to wait for at least the *next* swap
+>     party before it can peerswap that channel:
+>     It can accept any incoming peerswap now, but it cannot use
+>     those in-sidepool funds until the next swap party.
+>   * Thus, the node suffers from reduced expected fee earnings
+>     from the imbalanced channel after a swap party that it has
+>     no funds in the sidepool.
+>     Yes there is a chance that the remaining capacity is enough,
+>     there is also a chance (increasing with greater imbalance)
+>     that a spike in volume will totally deplete the channel.
+>   * Therefore, by forwarding the peerswap even though it gets 0
+>     compensation for the forwarding, the node avoids paying an
+>     opportunity cost in lost earnings by keeping that channel
+>     imbalanced.
+>     Every millisatoshi you save in not paying a cost is
+>     equivalent to a millisatoshi you earn, thus forwarding a
+>     peerswap is alreedy its own compensation, even if the node
+>     earns 0 fees for peerswap forwarding.
+
