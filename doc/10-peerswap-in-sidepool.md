@@ -260,7 +260,8 @@ When a participant receives a peerswap-in-sidepool offer:
 > **Rationale** Targeting a "perfectly balanced" 50-50 split stems
 > from the observation that as a Lightning Network channel is
 > used, its current balance is the integral of all payment flows
-> on that channel.
+> on that channel (the current balance is dominated by the
+> accumulation of payment flows over time).
 >
 > Integrals, as anyone who has studied calculus knows, include a
 > `+ C` constant term.
@@ -273,8 +274,8 @@ When a participant receives a peerswap-in-sidepool offer:
 > via that channel, which can then be used to drive other business
 > decisions.
 
-Forwaradable Peerswaps
-======================
+Forwardable Peerswaps
+=====================
 
 Peerswaps, provided they are "swap in" or from outside the
 Lightning Network to inside a Lightning Network channel, may be
@@ -390,27 +391,36 @@ encrypted to the public key of the other, the forwarding node
 cannot decrypt the handed-over private key either.
 As noted above, if the forwarding node had completely replaced the
 ephemeral public key of either side, then the peerswap does not
-continue.
+continue, and would abort before either side can perform a
+private key handover.
+
 Even if the forwarding node *were* to get the handed-over private
-key, two private keys are needed anyway.
+key, two private keys are needed anyway, not just one, and normal
+private key handover only hands over one key.
 
 [SIDEPOOL-06 Secure Private Key Handover]: ./06-htlcs.md#secure-private-key-handover
 
 Finally, there is no way for an endpoint acceptor, or an endpoint
 offerrer, to determine if its direct peer in the peerwswap is
-actually forwarding the peerswap or not.
-The forwarder acts as a proxy.
+actually forwarding the peerswap or not, as the forwarder acts as
+a proxy.
 There exists a virtualization argument:
 Any security flaw that exists in the forwarded case must by
 necessity exist in the non-forwaded case, as neither endpoint can
 be certain that they are talking to a proxy or not.
 In other words, a "real" endpoint offerrer or acceptor can be
 composed of multiple smaller components, one of which is directly
-talking to the "real" endpoint offerrer or acceptor and
-translating its communication in other ways to other components,
-and if the protocol is secure in that basic case, it is also
-secure in the case that the directly-communicating node is a full
-Lightning Network node.
+talking to the other "real" endpoint acceptor or offerrer and
+translating its communication to other components of the node,
+and if the protocol is secure in the non-forwarded case, it is
+also secure in the case that the directly-communicating node is a
+full Lightning Network node translating its communication to
+another full Lightning Network node.
+Both "real" endpoints need to validate the information it receives
+over the peerswap-in-sidepool protocol vs. what happens in the
+sidepool output state regardless of whether or not forwarding
+occurred, and if validation succeeds, it does not matter to it
+whether the protocol was done via proxy (forwarding) or directly.
 
 Protocol Flow Detail
 ====================
@@ -550,7 +560,13 @@ That is, the in-Lightning HTLC to the direct peerswap offerrer
 MUST exactly equal the in-Lightning HTLC from the direct peerswap
 acceptor.
 
-> **Rationale**
+> **Rationale** Every HTLC is a risk; in case of HTLC default, the
+> constructs hosting the HTLC (the Lightning Network channel, or
+> the sidepool) must be dropped onchain, with attendant onchain
+> fees.
+> Thus, HTLCs are not free and it is understandable that any
+> involvement in HTLCs, including forwarding a peerswap, would
+> induce a fee.
 >
 > * If a node does not want to forward peerswaps without being
 >   compensated, it can simply not forward (i.e. not implement
@@ -579,5 +595,16 @@ acceptor.
 >     Every millisatoshi you save in not paying a cost is
 >     equivalent to a millisatoshi you earn, thus forwarding a
 >     peerswap is alreedy its own compensation, even if the node
->     earns 0 fees for peerswap forwarding.
-
+>     earns 0 fees directly from peerswap forwarding.
+>
+> The expectation is that there is some level of in-Lightning
+> HTLCs not defaulting (i.e. causing unilateral closes) at which
+> point the effective cost of an HTLC drops below the expected
+> cost of a channel being imbalanced enough to lose out on
+> payment forwarding earnings.
+> What that point is, is not mandated in this specification, and
+> actual implementations are free to judge this for themselves
+> using real-world data; the expectation is that forwarding is
+> likely to remain viable and desirable even at 0 fee, as the
+> fee here is effectively getting the channel rebalanced without
+> having to pay for the rebalance yourself.
