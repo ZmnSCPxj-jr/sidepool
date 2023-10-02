@@ -333,11 +333,12 @@ When a swap party is initiated by the pool leader:
 * Go through the sorted list, allocating funds available in the
   sidepool to each other participant.
   * Allocate funds equal to half (or some reasonable fraction)
-    of the "imbalance error" with that participant.
-  * If we run out of funds in the sidepool, put the remaining
+    of the "imbalance error" with that participant, rounded to an
+    exact satoshi amount.
+  * If we run out of funds in the sidepool, move the remaining
     to-offer list to a pending-to-offer list.
-* Go through the to-offer list and offer peerswaps to them, of
-  the amount allocated.
+* Go through the sorted to-offer list and offer peerswaps to them,
+  of the amount allocated.
 * Wait for incoming peerswap offers from to-accept participants.
   Reject peerswap offers if they are not coming from a participant
   in the to-accept list.
@@ -357,4 +358,49 @@ When a swap party is initiated by the pool leader:
 Protocol Flow Detail
 ====================
 
-(TODO)
+* When the pool leader announces a swap party via a [SIDEPOOL-04][]
+  `swap_party_begin` message, pool participants determine if they
+  want to perform a peerswap with some other pool participant.
+  If so, the pool participant becomes a peerswap offerrer and
+  offers a peerswap-in-sidepool to the counterparty, giving it the
+  in-sidepool HTLC details (amount, its HTLC ephemeral and
+  persistent public keys, hash, minimum timelock, etc.).
+* The counterparty determines if it wants to accept the given
+  peerswap, and if so, responds with its assent and the
+  in-sidepool HTLC details (its HTLC ephemeral and persistent
+  public keys, timelock, etc.).
+  It is now the peerswap acceptor.
+* The peerswap offerrer creates the HTLC output using
+  [SIDEPOOL-04 Expansion Phase Requests][].
+* Both offerrer and acceptor wait for [SIDEPOOL-04 Expansion
+  Phase State Validation][] and check if the HTLC output was
+  created, stopping this protocol (without aborting the sidepool)
+  if the HTLC output was not created.
+* The acceptor waits for [SIDEPOOL-04 Expansion Phase
+  Completion][].
+  Once complete, the acceptor sends corresponding HTLCs over
+  Lightning via standard BOLT #2 `update_add_htlc` messages.
+* The offerrer waits for the in-Lightning HTLCs to become
+  "irrevocably committed" as per [BOLT #2 Forwarding HTLCs][],
+  then sends BOLT #2 `update_fulfill_htlc` with the preimage.
+  The offerrer also hands over its HTLC ephemeral private key
+  as per [SIDEPOOL-06 Secure Private Key Handover][].
+  The offerrer can now forget the peerswap details.
+* The acceptor claims the HTLC output using the
+  [SIDEPOOL-04 Contraction Phase Requests][], as it now has
+  possession of the HTLC aggregate ephemeral key.
+* The acceptor waits for [SIDEPOOL-04 Contraction Phase State
+  Validation][] and [SIDEPOOL-04 Contraction Phase
+  Completion][].
+  The acceptor can now forget the peerswap details.
+
+[SIDEPOOL-04]: ./04-swap-party.md
+[SIDEPOOL-04 Expansion Phase Requests]: ./04-swap-party.md#expansion-phase-requests
+[SIDEPOOL-04 Expansion Phase State Validation]: ./04-swap-party.md#expansion-phase-state-validation
+[SIDEPOOL-04 Expansion Phase Completion]: ./04-swap-party.md#expansion-phase-completion
+[SIDEPOOL-04 Contraction Phase Requests]: ./04-swap-party.md#contraction-phase-requests
+[SIDEPOOL-04 Contraction Phase State Validation]: ./04-swap-party.md#contraction-phase-state-validation
+
+[SIDEPOOL-06 Secure Private Key Handover]: ./06-htlcs.md#secure-private-key-handover
+
+[BOLT #2 Forwarding HTLCs]: https://github.com/lightning/bolts/blob/master/02-peer-protocol.md#forwarding-htlcs

@@ -299,6 +299,39 @@ the following hex dump:
 0x01 0x00 0x27
 ```
 
+Which is interpreted this way:
+
+* `0x01`: there is a 1 x 0-bits, then a 1-bit.
+* `0x00`: there are no 0-bits, then a 1-bit.
+* `0x27`: there are 39 x 0-bits, then a 1-bit.
+  (`0x27 == 39`)
+* Resulting in the original array:
+
+```json
+// 0x01: (0, 1)
+// 0x00: (1)
+// 0x27: (0, 0, 0, 0, 0, 0, 0, 0,
+//        0, 0, 0, 0, 0, 0, 0, 0,
+//        0, 0, 0, 0, 0, 0, 0, 0,
+//        0, 0, 0, 0, 0, 0, 0, 0,
+//        0, 0, 0, 0, 0, 0, 0, 1)
+// [ 0, 1,
+//   1,
+//   0, 0, 0, 0, 0, 0, 0, 0,
+//   0, 0, 0, 0, 0, 0, 0, 0,
+//   0, 0, 0, 0, 0, 0, 0, 0,
+//   0, 0, 0, 0, 0, 0, 0, 0,
+//   0, 0, 0, 0, 0, 0, 0, 1
+// ]
+[ 0, 1, 1, 0, 0, 0, 0, 0,
+  0, 0, 0, 0, 0, 0, 0, 0,
+  0, 0, 0, 0, 0, 0, 0, 0,
+  0, 0, 0, 0, 0, 0, 0, 0,
+  0, 0, 0, 0, 0, 0, 0, 0,
+  0, 0, 1
+]
+```
+
 If the set of feature bits is empty, then the encoding is a 0-length
 sequence of bytes, i.e. the encoding is also empty.
 
@@ -413,11 +446,11 @@ sending the partial signature to the pool leader (or for the pool
 leader, before it adds its partial signature to the aggregate
 signature):
 
-* The memory storing it SHOULD be securely zeroed out in a way
-  that is not optimized out by compilers or other language
-  interpretation tools.
-  * Production-quality implementations MUST securely zero out
-    the memory.
+* The memory storing it SHOULD be securely zeroed out or otherwise
+  securely overwritten in a way that is not optimized out by
+  compilers or other language interpretation tools.
+  * Production-quality implementations MUST securely zero out or
+    otherwise securely overwrite the memory.
 * The memory MUST be freed, or in a memory-managed environment,
   all references to it dropped.
 

@@ -327,6 +327,180 @@ of the sidepool to be confirmable.
     equal or greater than the absolute lock time, and an
     `nSequence` that encodes a relative 1 block lock time.
 
+Secure Private Key Handover
+===========================
+
+As noted above, HTLCs are "finalized" by handing over private
+keys to the ephemeral keypair, which allows the other side to
+compute the private key behind the aggregate ephemeral keypair
+used as the Taproot internal public key.
+
+To reduce the amount of code that is exposed to the handed over
+private key, we use a secure private key handover protocol.
+
+All SIDEPOOL protocols which require private key handover MUST
+have messages that use the secure private key handover protocol
+describe here, and MUST NOT have messages with a field, TLV, or
+any part of its payload that has the private key in cleartext
+after BOLT #8 decryption.
+
+> **Rationale** Although the messages are encrypted on-the-wire by
+> standard BOLT #8 tunnel encryption, once the message arrives at
+> the node and is decrypted by the BOLT #8 implementation, the
+> message payload is now in cleartext, and may be exposed to large
+> amounts of code that is not intended to handle private keys.
+>
+> For example, suppose that SIDEPOOOL messages did not encrypt
+> the private key additionally inside the SIDEPOOL message.
+> Now suppose a sidepool implementation is run as a CLN plugin.
+> CLN sends unrecognized odd messages to *all* plugins (that have
+> registered interest in custom (i.e. odd) message IDs) via the
+> plugin interface, which at its heart is a pair of UNIX pipes.
+> It sends the *decrypted* message payload as a hex string.
+>
+> This exposes the message payload, as cleartext, to lower-level
+> internal libraries used by CLN to handle I/O to plugins, to the
+> OS code that is handling the UNIX pipe, and worse, to *all*
+> plugins that registered an interest in custom message IDs, not
+> just to the sidepool implementation.
+> If the private key is sent inside the message payload without
+> any additional encryption, all of that code is now exposed to
+> the private key, and security escalations on *any* of that code
+> can now exfiltrate the ephemeral private key.
+>
+> By using this secure private key handover, the handed-over
+> private key is still encrypted even between the various parts
+> of a modern Lightning Network implementation, and cannot be read
+> by anything other than the holder of the other ephemeral private
+> key, which should be only the sidepool implementation component
+> of the node, and not any of the other components.
+> This improves the overall security of the private key handover.
+> As long as the sidepool implementation itself is secure against
+> exploits, no other part of the overall node is exposed to the
+> handed-over private key.
+
+Prior to private key handover, by necessity, both participants
+MUST exchange the ephemeral public keys (as it is needed to form
+the aggregate public key used as the Taproot internal public key).
+
+As such, if participant A wants to hand over its own ephemeral
+*private* key, it can encrypt the private key using asymmetric
+encryption so that only participant B --- and in particular, only
+the sidepool implementation of participant B that is holding the
+other ephemeral private key --- can decrypt it.
+This is done using trivial elliptic curve Diffie-Helman shared
+secret being used in a symmetric encryption scheme.
+
+Suppose participant A wants to hand over its ephemeral private
+key to participant B:
+
+* Both A and B have already exchanged the below while setting up
+  the HTLC:
+  * Participant A ephemeral public key.
+  * Participant B ephemeral public key.
+* Participant A creates a fresh random 256-bit number, the
+  encryption private key, and generates the encryption public key.
+* Participant A performs ECDH between the encryption keypair and
+  the participant B ephemeral keypair:
+  * It multiplies the encryption private key with the participant B
+    ephemeral public key.
+  * It takes the above resulting point and serializes it in the
+    standard SECP256K1 33-byte serialization.
+  * It takes the SHA-2 256-bit hash of the 33-byte serialization,
+    getting the 256-bit symmetric encryption key.
+* Participant A XORs the 256-bit symmetric encryption key with the
+  (also 256-bit) participant B ephemeral private key, resulting in
+  the encrypted participant A ephemeral private key.
+* Participant A sends the encryption *public* key and the encrypted
+  participant A ephemeral private key to participant B.
+* Participant B performs ECDH between the encryption keypair and
+  the participant B ephemeral keypair:
+  * It multiplies the participant B ephemeral private key with the
+    encryption public key.
+  * It takes the above resulting point and serializes it in the
+    standard SECP256K1 33-byte serialization.
+  * It takes the SHA-2 256-bit hash of the 33-byte serialization,
+    getting the 256-bit symmetric encryption key.
+* Participant B XORs the 256-bit symmetric encryption key with the
+  encrypted participant A ephemeral private key, resulting in the
+  participant A ephemeral private key.
+* Participant B validates that the received participant A
+  ephemeral private key is indeed the scalar behind the
+  previously-received participant A ephemeral public key.
+* Participant B is now in possession of both participant A
+  ephemeral private key and participant B ephemeral private key,
+  and can compute MuSig homomorphically on the private keys to
+  generate the private key corresponding to the aggregate
+  ephemeral public key.
+
+    Participant A
+
+       CSPRNG -------> enc prv key ------------+
+                             |                 |
+      A eph prv key ---------(------+     +---------+
+      A eph pub key          |      |     | times G |
+                             |      |     +---------+
+      B eph pub key ------+  |      |          |
+                          |  |      |     enc pub key
+                          v  v      |          |
+                       +--------+   |          |
+                       |  ECDH  |   |          |
+                       +--------+   |          |
+                            |       |          |
+                            v       v          |
+                         +-------------+       |
+                         |     XOR     |       |
+                         +-------------+       |
+                                |              |
+                        enc A eph prv key      |
+                                |              |
+                                v              v
+                           +----------------------+
+                           |         CAT          |
+                           +----------------------+
+    Participant A                     |
+    --------------------------------- v ------------------------
+                                  .:| | |:.
+                            Magic `:| | |:'
+       THE CRUEL WORLD      BOLT8 ^:| | |:-
+                           Tunnel ,:| | |:.
+                                  `:| | |:,
+    --------------------------------- v ------------------------
+    Participant B                     |
+                                      |
+      A eph pub key                   |
+                                      |
+      B eph prv key ------------------(------------------+
+      B eph pub key                   |                  |
+                                      v                  |
+                           +----------------------+      |
+                           |         CUT          |      |
+                           +----------------------+      |
+                             |                  |        |
+                     enc A eph prv key     enc pub key   |
+                             |                  |        |
+                             |                  v        v
+                             |               +--------------+
+                             |               |     ECDH     |
+                             |               +--------------+
+                             +--------------------+ |
+                                                  | |
+                                                  v v
+                                               +-------+
+                                               |  XOR  |
+                                               +-------+
+                                                   |
+                                  YAY! --->  A eph prv key
+
+> **Rationale** Both the data to encrypt (i.e. the participant A
+> ephemeral private key), and the symmetric encryption key
+> generated by ECDH, are 256 bit in length, and direct XOR is
+> simple and does not require a more complicated symmetric stream
+> cipher.
+> A simple XOR reduces the code that is directly exposed to
+> the private key being handed over to only a very simple
+> loop that does XOR between two fixed-length byte arrays.
+
 Sequence Diagrams
 =================
 
