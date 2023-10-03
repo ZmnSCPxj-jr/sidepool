@@ -1,4 +1,4 @@
-SIDEPOOL-05 HTLCs In Sidepools
+SIDEPOOL-06 HTLCs In Sidepools
 
 Overview
 ========
@@ -379,7 +379,7 @@ after BOLT #8 decryption.
 > message payload is now in cleartext, and may be exposed to large
 > amounts of code that is not intended to handle private keys.
 >
-> For example, suppose that SIDEPOOOL messages did not encrypt
+> For example, suppose that SIDEPOOL messages did not encrypt
 > the private key additionally inside the SIDEPOOL message.
 > Now suppose a sidepool implementation is run as a CLN plugin.
 > CLN sends unrecognized odd messages to *all* plugins (that have
