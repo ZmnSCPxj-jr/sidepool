@@ -222,10 +222,39 @@ The offerrer:
 
 The acceptor:
 
-* MUST NOT sign off on the new state that completes the
-  Expansion Phase (via `swap_party_expand_sign`) until after it
-  has saved the internal public key and other HTLC details into
+* MUST NOT send the preimage, or (if this is a swap or an HTLC is
+  forwarded) offer to pay to learn te preimage, until after it has
+  saved the internal public key and other HTLC details into
   persistent storage.
+
+The details that MUST be stored in persistent storage are:
+
+* Offerrer ephemeral public key.
+* Offerrer persistent public key.
+  * For the offerrer, how to derive or otherwise acquire its
+    persistent private key.
+* Acceptor ephemeral public key.
+* Acceptor persistent public key.
+  * For the acceptor, how to derive or otherwise acquire its
+    persistent private key.
+* HTLC hash.
+* HTLC timeout.
+* (optional, can be derived from above) The internal public key,
+  i.e. the MuSig aggregation of the offerrer ephemeral public key
+  and the acceptor ephemeral public key.
+
+The participants MAY delete the information if one of the
+conditions below are true:
+
+* The swap party completes with the HTLC fund (re)claimed.
+* The participant has handed over full control of the fund to the
+  other participant.
+* The sidepool was aborted:
+  * The final state on the aborted sidepool does not include
+    the HTLC.
+  * Or the final state on the aborted sidepool does include the
+    HTLC, and the HTLC has been (re)claimed, and the (re)claiming
+    transaction has confirmed deeply enough.
 
 Happy Path Spend
 ----------------
