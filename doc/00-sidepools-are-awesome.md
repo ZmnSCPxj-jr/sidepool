@@ -357,6 +357,16 @@ the cost to open the channel, then if they manage to route even
 just 1 measly payment they already win because their cost is 0
 (because they helpfully shifted the cost to you).
 
+(No, being forced to lock their funds towards you does not change
+that argument, what do you think the word "*cost*" means?
+If they lock the funds to you for some time mandated by the
+inbound liquidity marketplace, when they could have instead ran a
+JoinMarket maker bot and earned passively, then the fact that they
+lock their funds is an opportunity cost (they could have instead
+ran a JoinMarket maker during the time they locked the funds to a
+channel), but just like the cost of channel opening, you can bet
+that the osst has been shifted to you.)
+
 Worse, there is also an incentive for runners of inbound liquidity
 marketplaces to cover up the above, because obviously the sellers
 of the inbound liquidity are going to pay, at least in terms of
@@ -430,10 +440,11 @@ On Lightning, the state becomes:
                  \-------- S
                   950   50
 
-Now you have 50 units of inbound liquidity from `S` to `R` to you.
-With the swap succeeding:
+Now you have 50 units of inbound liquidity from `S` to `R` to you,
+meaning you effectively bought inbound liquidity from `S`.
+And now that the swap has succeeded.
 
-* You got inbound liquidity.
+* You got inbound liquidity from `S`->`R`->`A`.
 * You got important evidence: *it is possible for a payer to reach
   `S` from some randomly-selected node `R`*.
 
@@ -459,7 +470,7 @@ meaning the swap does *not* happen.
 However, *because* the swap does not happen, it means that *you do
 not pay `S`*, because the swap did not occur and they only get
 paid if the swap succeeds.
-Sure you failed to get inbound liquidity --- but you also did not
+Sure, you failed to get inbound liquidity --- but you also did not
 pay `S` for *bad* inbound liquidity that you cannot actually use.
 What you should now do is to look for a differrent `S` swap
 service, while still retaining the channel to `R`.
@@ -488,6 +499,9 @@ liquidity:
 
 Thus, swap providers are a superior method of acquiring inbound
 liquidity than inbound liquidity marketplaces!
+This is why [CLBOSS uses swap services][].
+
+[CLBOSS uses swap services]: https://zmnscpxj.github.io/clboss/01-inbound.html
 
 Further, swap providers are in the business of, well, *providing
 swaps*.
@@ -497,7 +511,7 @@ only if the Lightning side of the swap reaches them.
 If they do not have good inbound liquidity themselves, then they
 fail to get paid for swap services and have no business model.
 
-Of course, current swap provider tend to be somewhat expensive,
+Of course, current swap providers tend to be somewhat expensive,
 but mostly only because there is not enough competition among swap
 providers.
 And another reason is that onchain is expensive, and one hop is
@@ -555,7 +569,7 @@ pressure in the lowest-fee nodes.
 Swapping to the Bitcoin blockchain effectively releases pressure
 to the rest of the Bitcoin world.
 However, this is already represented by the fact that sidepool
-operations are cheaper ("less valuable than") Bitcoin blockchain
+operations are cheaper ("less valuable") than Bitcoin blockchain
 operations.
 
 Sidepools effectively act as an additional buffer holding pending
@@ -570,6 +584,228 @@ sidepool, and then as the pressure in Lightning "leaks into" the
 sidepools supporting it, some of the pressure in the sidepools
 are then released to the wider Bitcoin blockchain, with fewer
 operations as you move from Lightning to sidepool to blockchain.
+
+Sidepools Are Awesome Part 1.1: Forwardable Peerswaps Are Awesome
+-----------------------------------------------------------------
+
+It is a truth universally acknowledged, that a single network in
+possession of a good number of nodes, must be in want of a
+packet-switching scheme.
+
+Packet switching is simply that individual nodes decide locally
+where to route objects known as "packets".
+
+We should note that all networks are like the Lightning Network.
+
+Sometimes, when a node wants to send something --- data in a
+"normal" Internet Protocol network, an HTLC in Lightning --- to
+some neighboring node it has some connection with --- a physical
+connection in an Internet Protocol network, a channel in Lightning
+--- the "next hop" would be unable to handle that due to capacity
+issues --- filling too many buffers in an Internet Protocol
+network, channel liquidity depletion in Lightning.
+
+(It is not material that in an Internet Protocol network the
+buffers will be "quickly" cleared as the next node continues its
+processing work, or just decides to drop data; the same "clearing"
+would also occur in Lightning once payment flows in the opposite
+direction.
+It is only a matter of expected time frames --- "quick" clearing
+of buffers in Internet Protocol, vs. slow, maybe many months that
+a Lightning Network channel would be congested before payment
+flows reverse and decongest the channel.)
+
+What the Internet Protocol does is to let individual intermediate
+nodes decide *where* to push data at.
+If there are two possible "next nodes" at this node, and one of
+them is congested, then obviously this node can select the other
+one.
+
+This is not what the Lightning Network does.
+
+The reason the Internet Protocol can do that is because the
+destination Internet Protocol address (a.k.a. IP Address) is
+known by each individual node;
+the destination is sent in cleartext and as the data travels
+over the Internet Protocol network, the destination, in cleartext,
+travels with it.
+This allows intermediate routing nodes on the Internet Protocol
+network to decide the best next hop (by measuring the distance
+there to the final destination), and if that next hop is
+congested, select the next best next hop (while still ensuring
+that they can progress to become nearer to the destination), etc.
+
+Unfortunately, because the destination is given in cleartext,
+intermediate nodes can now easily snoop who is sending what data
+to whom.
+This is the basis of egregious censorship and surveillance, such
+as the Great Firewall of China.
+
+In an effort to gain freedom against censorship and surveillance,
+the Lightning Network decided to not give the destination in
+cleartext to every intermediate node.
+Unfortunately, this lead to a problem: how do we get the payment
+to reach the destination?
+Obviously we cannot use packet routing, a la the Internet
+Protocol, anymore.
+
+What Lightning Network does is to have the entire route of a
+payment mapped out by the source of the payment.
+That way, only the source knows the final destination.
+Intermediate nodes only know the next hop, but (1) cannot be
+sure that the next hop is the last and (2) cannot be sure if the
+previous hop they got it from was the first.
+
+Unfortunately, this means that if there is congestion along the
+route --- i.e. a lack of liquidity --- then the intermediate
+nodes cannot "correct" by routing the payment to an alternate
+next hop.
+The intermediate node cannot know which among its other,
+non-congested neighbors will still be able to get the payment to
+the destination, because the intermediate node does not know the
+destination.
+Instead, the intermediate node has to communicate *all* the way
+back to the payment source, which has to re-decide a new next hop,
+but without any information about which alternate hop has
+enough liquidity (because giving out that information is equivalent
+to leaking how much funds you own in a channel, allowing payment
+sources to surveill intermediate nodes!).
+
+This is why payment failures ***SUCK*** in the Lightning Network.
+Most (>90%) of failures are due to insufficient liquidity (i.e.
+too much congestion on a hop).
+When that occurs, the local hop cannot correct, it has to feed the
+failure back all the way to the source node, and then the source
+node guesses some other alternative route (which might not work
+either!), then has to re-establish payments all the way back to
+the erring node with a new next hop to try.
+Payment failures suck because source routing sucks.
+
+Unfortunately we cannot safely use packet routing for payments
+because that totally leaks who gets paid, and we consider privacy
+more important.
+
+However, some random wog with an unpronounceable name realized
+that he could apply the virtualization argument ("how do you know
+the difference between the real world and the dream world, Neo?")
+to a novel swap protocol called "peerswap".
+
+A "*peerswap*" is a swap that is restricted to *only* being with a
+direct peer.
+That is, a peerswap requires that you have a direct channel with
+the swap service.
+
+Now this sucks totally because the entire point of using a swap
+service to buy inbound liquidity is that you can use random
+sampling to get evidence that the swap service *has* inbound
+liquidity to resell you.
+The technique fails if you make a channel directly to the swap
+service.
+Thus, peerswaps, as-is are pointless --- they are just an indirect
+way of buying inbound liquidity, but you still suffer from the
+problem of any inbound liquidity marketplace: you have no evidence
+that the inbound liquidity you are buying is any good at all.
+
+However, you can do two things to improve peerswaps and create
+"*forwardable peerswaps*":
+
+* Restrict the swap protocol to only allowing paying onchain to
+  get funds in-Lightning, and disallow th reverse.
+* Apply the virtualization argument:
+  * You can offer to pay onchain to get in-Lightning funds to a
+    direct peer (hence "*peer*swap").
+  * The direct peer can, instead of actually handling the onchain
+    funds, actually send the same offer to *its* peer (hence
+    "*forwardable*").
+  * And so on, until some node on the network decides it really
+    does want to get onchain funds and give you in-Lightning
+    funds.
+  * How would you even know the difference?
+    "What *is* 'real'?  How do you define 'real'?"
+
+The neat thing about forwardable peerswaps is that *it allows
+packet switching*.
+
+Recall that when you requested a peer so you can pay them onchain
+to get in-Lightning funds, that peer has the *choice* of accepting
+directly at their node --- or to forward the peerswap to *any*
+other node.
+This is in fact the same as the packet switching in the Internet
+Protocol: the node chooses where to send the hop.
+The only requirement is that the forwarding node only really needs
+to find a peer where it wants to have more liquidity towards.
+
+And so, we are able to reacquire packet switching in the Lightning
+Network.
+
+Note that there is no privacy issue here.
+Unlike with payments, you, who has some funds onchain, do not
+actually care *where* the peerswap ends up getting forwarded to.
+The peerswap has no destination address, because it *can* be
+forwarded *anywhere*, the only requirement is it has to reach
+*any* node that is willing to get onchain funds if they pay
+in-Lightning funds.
+
+Now, why would *you* initiate a peerswap (that you are not
+forwarding from somewhere else) in the firrst place?
+This is because you need to have some additional liquidity towards
+that peer.
+
+If that peer needs some additional liquidity towards some *other*
+node that is *its* peer, then it can forward the peerswap to that
+node.
+
+What if the node does not need additional liquidity towards any
+other of its own peers?
+That implies that it already *has* liquidity towards its other
+peers.
+But high liquidity *towards* its peers implies a *lack* of
+liquidity *from* its peers, because Lightning Network channels
+have maximum capacities.
+This means that they lack inbound liquidity, and would willingly
+accept some onchain funds in order to get inbound liquidity.
+
+You, as an initiator of a peerswap that ends up getting forwarded,
+want to have more outbound liquidity.
+Every hop along the path where the peerswap ends up getting,
+will naturally look for a next hop that needs liquidity coming
+from your direction (it would be foolish of them to forward the
+peerswap towards a node that has more inbound liquidity than it
+needs, because that node will naturally reject it).
+Then the sequence of forwarded peerswaps will terminate at some
+node that wants inbound liquidity and will be willing to handle
+some onchain funds to get that inbound liquidity.
+
+Thus:
+
+* The forwardable peerswap naturally routes from nodes that want
+  outbound liquidity to nodes that want inbound liquidity.
+* None of the intermediate nodes know who the start and end points
+  are.
+* The start and end points do not know if this was a single-hop
+  swap or one over many hops.
+* Decisions are made locally with local knowledge, without having
+  to keep asking the start point.
+* The entire thing improves the health of the network globally,
+  while requiring only local knowledge and local decisionmaking.
+
+Thus, forwardable peerswaps are awesome.
+
+Now, as described above, forwardable peerswaps are about moving
+onchain funds to in-Lightning funds.
+But nothing really *requires* the non-Lightning side to be a
+blockchain.
+We can implement forwardable peerswaps where the initiator has
+some funds in a *sidepool* and wants to pay over the sidepool and
+get in-Lightning funds in return.
+
+Indeed, the sidepool protocol has at its core the use of swaps
+between peers as the primary method of managing liquidity on the
+Lightning Network using the sidepool.
+And the sidepol protocol is designed to make it easy to implement
+forwarding of the peerswaps.
+
+That is another reason why sidepools are awesome.
 
 The HTLC Default Problem
 ========================
