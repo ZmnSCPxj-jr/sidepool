@@ -17,7 +17,7 @@ dynamically, according to particular rules, without any data
 needing to be published onchain.
 
 The most recent set of transaction outputs is called the
-"current state" of the pool.
+"*current state*" of the pool.
 
 The current state can be updated twice, in succession, during
 sessions known as "*swap parties*".
@@ -30,7 +30,7 @@ While operating, version 1 pools have the following transaction
 outputs and transactions:
 
 * A *funding transaction*, one of whose outputs is the *funding
-  transaction output*.
+  transaction output* for the pool.
   * The funding transaction must be confirmed onchain to a
     certain minimum depth before the sidepool is considered
     operational.
@@ -40,6 +40,8 @@ outputs and transactions:
 * A *kickoff transaction*, which spends the above funding
   transaction output, and has a single output, an aggregate key
   of all participants.
+  * The kickoff transaction has `nSequence = 0`, which indicates
+    RBF is enabled and a relative lock time of 0 blocks.
 * Multiple *update transactions*.
   * They all have a single input:
     * The first update transaction spends from the output of the
@@ -51,10 +53,12 @@ outputs and transactions:
       an aggregate key of all participants.
     * The last update transaction has as outputs all of the
       current set of transaction outputs inside the pool.
-  * Update transactions may have an `nSequence` encoding a 
-    relative lock time, from 0 blocks, to
+  * Update transactions have an `nSequence` encoding a relative
+    lock time, from 0 blocks, to
     `blocks_per_step * (steps_per_stage - 1)`.
     Only multiples of `blocks_per_step` are allowed.
+    * As the `nSequence` would be less than `0xFFFFFFFE`, it also
+      indicates RBF is enabled.
   * The number of update transactions is `number_of_stages`.
 
 For version 1 pools:
@@ -78,6 +82,34 @@ It is expected that protocols built on top of sidepools will
 normally generate Taproot addresses that are unique with high
 probability if the participants are honest, but at the sidepool
 level duplicates are allowed.
+
+> **Rationale** Participants within the same sidepool may attempt
+> to disrupt the entire sidepool by duplicating an output.
+> If this specification did not indicate what happens in that
+> case, differring implementations would handle the duplicated
+> output in different ways, including in ways that could cause one
+> or the other implementation to lose funds.
+>
+> If two different participants want to create the exact same
+> output at the same time, there is no easy way to determine which
+> one honestly created their output and which one copied it.
+> New outputs are expected to be created with shared control
+> (e.g. the new output being created is an HTLC), and if one
+> participant funds that output, the other participant with
+> shared control can attempt to disrupt their protocol in ways
+> that trigger bugs in the other participant by duplicating the
+> same output.
+> Due to the shared control, there is no way to prove which
+> participant was honest and which one was copying.
+>
+> Thus, this specification allows duplicates, and implementations
+> need to be robust against duplicates of the outputs.
+
+Implementations of higher-level protocols that need an output to
+be instantiated in the sidepool MUST ignore duplicates of the
+output they are expecting, and treat the output as having been
+created if at least one copy of it exists in the output state that
+is created in the sidepool.
 
 The Last update transaction has a set of outputs that represents
 the current output state.
@@ -111,11 +143,12 @@ single Schnorr signature to be generated, such as
 higher-level protocol, or by handing over actual private keys
 that were generated ephemerally for a single run of the
 higher-level protocol.
-See the document on HTLCs inside sidepools for an example
-(TODO).
+See [SIDEPOOL-06 HTLCs In Sidepools][] for an example.
+
+[SIDEPOOL-06 HTLCs In Sidepools]: ./06-htlcs.md
 
 > **Rationale** For protocols built on top of sidepools, a
-> protocol abort would imply that the sidepool itself should
+> protocol timeout would imply that the sidepool itself should
 > abort --- the expectation is that a dishonest or buggy
 > participant would not correctly handle the new state in the
 > sidepool anyway, thus, abort paths would need to be enforced
@@ -135,6 +168,8 @@ Output states MUST:
 * Have a minimum of 1 output.
 * Have a maximum of 400 outputs
   (`sidepool_version_1_max_outputs = 400`).
+* Have at least one output that is unilaterally controlled by the
+  pool leader.
 
 Output states, when serialized, are sorted in a canonical
 ordering:
@@ -145,7 +180,7 @@ ordering:
   numbers, in satoshi, concatenated after the serialization of
   the Taproot X-only Pubkeys.
   The serialization of a single output is thus 40 bytes.
-* Each serialized output is then sorted lexicographically.
+* The serialized outputs are then sorted lexicographically.
   * Equivalently, outputs are sorted by the lexicographic
     comparison of their Taproot X-only Pubkeys, and in case of
     duplicate public keys, are sorted with the smaller amounts
@@ -206,24 +241,28 @@ party phases*":
 * *Contraction Phase* - participants specify that one or more
   transaction outputs in the current state will be merged into a
   new transaction output.
-  * For example, a participants accepts an HTLC by arranging to
+  * For example, a participant accepts an HTLC by arranging to
     get the offerer ephemeral private key in that HTLC (i.e.
     private key handover), then signing off on the merge from the
     HTLC and its other funds (possibly including other HTLCs).
 
-As described in another document (TODO), the participant would
-send the pool leader a signature in the Expansion Phase that
-signs a message describing all the outputs it wants to create,
-and in the Contraction Phase would create a signature for each
-output it wants to destroy, signing a message describing the
-new merged output.
+As described in [SIDEPOOL-04 Swap Party Protocol][], the
+participant would send the pool leader a signature in the
+Expansion Phase that signs a message describing all the outputs it
+wants to create, and in the Contraction Phase would create a
+signature for each output it wants to destroy, signing a message
+describing the new merged output.
+
+[SIDEPOOL-04 Swap Party Protocol]: ./04-swap-party.md
 
 There is also an optional third phase, the *Reseat Phase*.
 The Reseat Phase does not represent an update of the
 [Decker-Wattenhofer][] mechanism, but instead represents an
 onchain operation, which causes the mechanism to reset.
-The full details of the Reseat Phase are described in another
-document (TODO).
+The full details of the Reseat Phase are described in
+[SIDEPOOL-05 Reseat And Splicing][].
+
+[SIDEPOOL-05 Reseat And Splicing]: ./05-reseat-splicing.md
 
 Pool Update Counter
 -------------------
@@ -372,9 +411,16 @@ onchain feerates below:
 > fee disagreement, the onchain feerate estimates start moving
 > even faster, exacerbating the problem and causing even more
 > channels to close.
+>
+> Even in times where the mempool is so congested that the low
+> feerates start being dropped from the mempool, if the mempool
+> *does* start to decongest, the later transaction versions are
+> more likely to be picked up first due to having higher feerates
+> than earlier versions, i.e. the later transactions will be
+> returned to the mempool faster.
 
 > **Non-normative** As noted, this scheme reduces, but ***does
-> not eliminate***, the probability that a defunct state is
+> not eliminate***, the probability that a previous state is
 > confirmed.
 > If a unilateral close is triggered and the mempool is
 > congested such that the latest state is unable to be
@@ -413,16 +459,6 @@ tax for that state.
 The onchain fee contribution tax is then deducted from each
 transaction output.
 
-As the total is unlikely to be divisible by the number of
-transaction outputs, there will be an overpayment.
-This overpayment MUST NOT be put in the transaction fee of
-any of the transactions.
-Instead, the pool leader MUST maintain a non-zero amount of
-funds it unilaterally controls, and put this overpayment into
-the transaction output representing that fund.
-Thus, the pool leader may end up having a net positive amount on
-its unilaterally-controlled funds.
-
 > **Rationale** This distribution of the onchain fees
 > incentivizes participants to only have one transaction output
 > for all its unilaterally-controlled funds.
@@ -436,6 +472,39 @@ its unilaterally-controlled funds.
 > by which Lightning Network nodes, as messages relating to the
 > expansion and contraction of those funds would arise from that
 > node anyway.
+
+The total onchain fee contribution tax is the individual onchain
+fee contribution tax times the number of transaction outputs in
+that state.
+
+This total onchain fee contribution tax may be equal, or larger
+than, the actual total fees paid for a unilateral close.
+The difference between the total onchain fee contribution tax,
+and the actual total fees, is the onchain fee contribution tax
+overpayment.
+
+This overpayment MUST NOT be put in the transaction fee of
+any of the transactions.
+Instead, the pool leader MUST maintain a non-zero amount of
+funds it unilaterally controls, and put this overpayment into
+the transaction output representing that fund.
+Thus, the pool leader may end up having a net positive amount on
+its unilaterally-controlled funds.
+
+> **Rationale** If the overpayment were put in the transaction
+> fee of the Last update transaction, then the Last update
+> transaction when the lowest bit is 0 might have a higher
+> overpayment than when the Last update transaction has a
+> lowest bit of 1.
+> This would change the difference in fees between those
+> transactions, possibly dropping below the RBF [BIP-125
+> Implementations Details][] Rule 4 requirement, so that a
+> broadcasted Last update transaction with bit 0 is not
+> replaced by the one with bit 1.
+
+The "*overpayment beneficiary*" is an output in the output state
+that is nominated by the pool leader to be the beneficiary of the
+onchain fee contribution tax overpayment.
 
 Thus, a transaction output in the current state has two values:
 
@@ -457,8 +526,11 @@ Thus, a transaction output in the current state has two values:
 
 All serializations of output states, and individual outputs, use
 nominal amounts.
-The post-tax amount is only used when creating the outputs of the
-Last update transaction.
+In order to regenerate the post-tax amount, the pool leader also
+needs to inform the other pool participants about the overpayment
+beneficiary.
+The post-tax amount is used when creating the outputs of the Last
+update transaction.
 
 Update Transaction Recreation
 -----------------------------
@@ -628,3 +700,98 @@ must have its individual onchain fee contribution tax deducted.
         output = output - tax + overpayment
     else:
         output = output - tax
+
+Addendum: Why Decker-Wattenhofer
+================================
+
+> **Rationale** This entire section is a rationale for why we
+> use the Decker-Wattenhofer decrementing-`nSequence` mechanism.
+
+Sidepol version 1 uses [Decker-Wattenhofer][]
+decrementing-`nSequence` mechanisms.
+
+Just to be clear, the linked paper introduces Duplex Micropayment
+Channels, which are 2-participant offchain mechanisms.
+The duplex mechanism is actually several mechanisms:
+
+* A sequence of decrementing-`nSequence` mechanisms...
+* ...terminated by two relative-locktime Spilman channels.
+
+The name "duplex" comes from the fact that the Spilman channels
+are unidirectional, and we have two such channels going in
+opposite directions, hence duplex.
+Sidepool version 1 does *not* use duplex, it uses the
+decrementing-`nSequence` mechanisms only.
+
+The decrementing-`nSequence` mechanism has two pros and a major
+con:
+
+* Decrementing-`nSequence` Pro:
+  * Can be implemented with existing 2023 Bitcoin.
+  * Can be used by more than two participants.
+* Decrementing-`nSequence` Con:
+  * Pushes a lot of data onchain in case of a unilateral close.
+
+Decker-Russell-Osuntokun ("eltoo") reduces the unilateral close
+to only two transactions, but cannot be implemented without
+changes to Bitcoin consensus as of 2023, and is thus not an
+option.
+
+Law also presents two other mechanisms in [Efficient Factories For
+Lightning Channels][].
+These mechanisms have the same two pros above (works today,
+N > 2), but do *not* have the con of pushing a lot of data
+onchain in a unilateral close --- they only require 2 transactions.
+
+[Efficient Factories For Lightning Channels]: https://github.com/JohnLaw2/ln-efficient-factories/blob/main/efficientfactories10.pdf
+
+They have a major con, however:
+
+* TPF / SC Con:
+  * Every participant needs to put up a bond, which is slashed
+    if they cheat and publish an old state, and which is a
+    *separate* onchain fund from the funds inside the mechanism.
+
+The above con makes the mechanism undesirable for sidepools.
+One of the advantages of sidepools is that it allows the limited
+funds of a Lightning Network participant to be allocated, not to a
+single channel to a single peer, but to multiple peers in the same
+sidepool.
+Thus, the extra bond funds are a capital inefficiency that would
+be unnecessary under decrementing-`nSequence` mechanism.
+
+In the worst case, there exists a state where all the sidepool
+funds are owned by only one participant.
+Then if the most recent valid state has that participant with 0
+funds (or close to it relative to the fund size) in the sidepool,
+that participant can attempt to publish the old state where they
+owned all the sidepool funds.
+Thus, in order to make that unpalatable, the bond has to be the
+same size as the entire funding of the whole mechanism, and
+worse, *each* participant has to put that bond up.
+
+The alternative is to force participants to lock up funds inside
+the mechanism, which they can then not use in transactions within
+the mechanism, so that the worst-case difference between the
+most recent state and some old state cannot exceed some
+threshold, and only that worst-case difference is put in the
+external bond.
+But that is equivalent to putting up a bond of similar size
+outside the mechanism that cannot be spent during the lifetime
+of the mechanism, and that will end up having the same capital
+inefficiency.
+
+The extra bond cannot be used for other purposes.
+As such, the existence of this bond represents an opportunity
+cost --- the owner could have instead put up the bonds in
+Lightning Network channels or JoinMarket maker bots and earned.
+As the lifetime of the mechanism increases, the cost of
+maintaining the bond increases as well.
+Ultimately, the cost of putting additional data onchain is a
+satoshi cost that can be compared to the opportunity cost of
+maintaining a bond (illiquidity) that cannot earn funds from
+Lightning or JoinMarket.
+Thus, for a long-lived mechanism that locks up significant funds,
+the opportunity cost of the bonds required in TPF and SC
+mechanisms will exceed the cost of the additional transactions in
+decrementing-`nSequence`.

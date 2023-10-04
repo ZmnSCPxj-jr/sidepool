@@ -413,6 +413,8 @@ Pool participants MUST NOT store the `secnonce`, or equivalent
 structure, in persistent storage.
 Pool participants SHOULD store these structures in non-swappable
 memory.
+Production-quality sidepool implementations MUST store `secnonce`
+in non-swappable memory.
 
 > **Rationale** If a `secnonce`-equivalent is stored on-disk, and
 > then that participant crashes, the human operator may
