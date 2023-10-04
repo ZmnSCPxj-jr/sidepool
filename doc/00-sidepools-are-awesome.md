@@ -189,14 +189,14 @@ a popular pastime:
   Lightning suggests that Lightning adoption is slow, yet there is
   a surprising amount of activity (i.e. actual payments that
   succeed, therefore not probing attempts by cheapskates) that
-  seems larger than wahat published statistics attest.
+  seems larger than what published statistics attest.
   * This is weak evidence, since merchants might lie, but one
     presumes that if they made the effort to integrate Lightning
     they would cry to the high heavens that they got a *lot* more
     of their economic activity on Lightning if they actually did
     get much more activity on Lightning.
 * Nodes that charge 0 fees always report high activity (channels
-  with them have a *lot* of HTLCs resolved).
+  with them have a *lot* of HTLCs fulfilled).
   However, node implementors have noticed that 0-fee nodes have
   very high rates of failure for *actual* payments.
   In fact, some Lightning Network node implementors have
@@ -232,10 +232,10 @@ higher-fee nodes.
 
 This hypothesis neatly explains the available evidence:
 
-* Lightning is not actually as popular as we hope, because its UX
-  for the customers-paaying-merchants use-case is worse than
-  expected, with higher fees and lower success rates than we
-  thought would happen.
+* Non-custodial Lightning is not actually as popular as we had
+  hoped, because its UX for the customers-paaying-merchants
+  use-case is worse than expected, with higher fees and lower
+  success rates than we thought would happen.
   * This is evidenced by the fact that merchants that *have*
     implemented non-custodial Lightning do not see it being used
     as much as onchain payments.
@@ -251,7 +251,8 @@ This hypothesis neatly explains the available evidence:
       liquidity monopolies and then overcharging users.
     * Indeed, this arbitrage is economically worthless, as 1
       satoshi in one channel is equivalent to 1 satoshi in another
-      channel, once both channels are dropped onchain.
+      channel ("1 BTC = 1 BTC" principle), once both channels are
+      dropped onchain.
       There is no strategic advantage to having the right 1
       satoshi in the right place that ultimately benefits the
       entire economy.
@@ -280,7 +281,8 @@ No amount of re-incentivizing or enabling circular rebalances will
 help: the problem is that of raw lack of liquidity.
 If there is a raw lack of liquidity, then no number of circular
 rebalances would correct that lack: all that they would do is
-to move what liquidity there is elsewhere.
+to move what liquidity there is to nodes that are willing to
+charge higher rates for it.
 
 This lack of liquidity is a sort of "pressure" in the network.
 Since the Lightning Network is literally a series of pipes, the
@@ -365,7 +367,8 @@ JoinMarket maker bot and earned passively, then the fact that they
 lock their funds is an opportunity cost (they could have instead
 ran a JoinMarket maker during the time they locked the funds to a
 channel), but just like the cost of channel opening, you can bet
-that the osst has been shifted to you.)
+that the opportunity cost of locking the funds to you has been
+shifted to you.)
 
 Worse, there is also an incentive for runners of inbound liquidity
 marketplaces to cover up the above, because obviously the sellers
@@ -683,7 +686,7 @@ Payment failures suck because source routing sucks.
 
 Unfortunately we cannot safely use packet routing for payments
 because that totally leaks who gets paid, and we consider privacy
-more important.
+more important than actual success.
 
 However, some random wog with an unpronounceable name realized
 that he could apply the virtualization argument ("how do you know
@@ -782,10 +785,15 @@ Thus:
   outbound liquidity to nodes that want inbound liquidity.
 * None of the intermediate nodes know who the start and end points
   are.
+  Privacy win!
 * The start and end points do not know if this was a single-hop
   swap or one over many hops.
 * Decisions are made locally with local knowledge, without having
   to keep asking the start point.
+  Not only do you not have to suffer long latencies due to having
+  to propagate congestion failures back to a remote start point,
+  decisions can be made locally with the latest up-to-date
+  information on what channels are and are not congested.
 * The entire thing improves the health of the network globally,
   while requiring only local knowledge and local decisionmaking.
 
@@ -806,6 +814,18 @@ And the sidepol protocol is designed to make it easy to implement
 forwarding of the peerswaps.
 
 That is another reason why sidepools are awesome.
+
+Packet switching is awesome because it solves global congestion
+problems using only local decisionmaking, which implies high speed
+and up-to-date accurate data on local conditions.
+
+Forwardable peerswaps are awesome because they effectively put
+packet switching in a network that does not otherwise use packet
+switching, and packet switching is awesome.
+
+Sidepools are awesome because they support forwardable peerswaps
+as the most basic liquidity-management action in the protocol,
+and forwardable peerswaps are awesome.
 
 The HTLC Default Problem
 ========================
