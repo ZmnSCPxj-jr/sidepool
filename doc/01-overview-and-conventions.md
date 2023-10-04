@@ -238,7 +238,7 @@ the following manner:
 * If the counterparty has an even feature bit that you do not
   recognize, you MUST NOT send any `sidepool_message_id` messages
   to that counterparty.
-  * Otherwise, you may send any `sidepool_message_id` messages to
+  * Otherwise, you MAY send any `sidepool_message_id` messages to
     the counterparty, provided the sub-messages are allowed by the
     set of features the counterparty indicates.
 
@@ -363,11 +363,21 @@ set, as described above:
       - Value: The encoded feature set, as described above.
       - Required.
 
+Receivers of `my_sidepool_features`:
+
+* MUST parse the features set as described above.
+* If parsing the features set fails, or if an unrecognized even
+  feature bit is set:
+  * MUST ignore all subsequent SIDEPOOL messages.
+  * MUST NOT send any SIDEPOOL messages to the peer.
+* Otherwise, MAY now send SIDEPOOL messages to the peer.
+
 MuSig2
 ======
 
 Sidepool participants use a "true multisignature", where a single
-public key represents all of the sidepool participants.
+public key represents all of the sidepool participants, when
+signing off on new states inside the sidepool.
 
 Sidepool version 1 uses MuSig2, as described in [BIP-327][].
 
@@ -395,14 +405,15 @@ persistent storage.
 
 During a MuSig2 signing session, participants need to generate
 and retain a structure, called `secnonce` in [BIP-327 Nonce
-Generation][].
-Participants first need to generate `secnonce`, then derive a
-structure called `pubnonce`, the latter of which is then sent to
-the pool leader, which aggregates the `pubnonce`s into an
-`aggnonce`, as per [BIP-327 Nonce Aggregation][].
+Generation][], containing secrets used to generate their
+contribution to the aggregate nonce.
+Participants first need to generate a `secnonce` from entropy,
+then derive a structure called `pubnonce`, the latter of which is
+then sent to the pool leader, which aggregates the `pubnonce`s
+into an `aggnonce`, as per [BIP-327 Nonce Aggregation][].
 The pool leader then broadcasts the `aggnonce` to the pool
-followers, which then need the `secnonce` to generate their
-partial signatures together with the `aggnonce`, as per
+followers, which then need their individual `secnonce` to generate
+their partial signatures together with the `aggnonce`, as per
 [BIP-327 Signing][].
 
 [BIP-327 Nonce Generation]: https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki#user-content-Nonce_Generation-2
