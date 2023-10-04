@@ -303,6 +303,62 @@ See Setup And Teardown (TODO) for how aborts are handled.
 > used to manage liquidity, and it may be better to just abort
 > the entire pool.
 
+After ensuring that it has a connection to all pool followers,
+the pool leader MUST send a `ping` message with
+`num_pong_bytes = 0` to all pool followers, as described in
+[BOLT #1 The `ping` and `pong` messages][].
+
+[BOLT #1 The `ping` and `pong` messages]: https://github.com/lightning/bolts/blob/master/01-messaging.md#the-ping-and-pong-messages
+
+The pool leader MUST wait for a `pong` message from all pool
+followers before continuing with this flow.
+
+If a pool follower does not respond with a `pong` within 60
+seconds, the pool leader:
+
+* MAY retry the `ping`-`pong` with *all* pool followers.
+  * MAY disconnect from the unresponsive pool follower(s), then
+    reconnect before retrying the `ping`-`pong` with *all* pool
+    followers.
+* MAY instead defer this swap party, or abort the sidepool.
+  * SHOULD defer the swap party or abort the sidepool if it has
+    been `ping`ing pool followers for more than a few times.
+
+> **Rationale** Once the pool leader has signalled the formal 
+> start of the swap party via broadcasting `swap_party_begin`
+> below, it has committed the entire participant set to actually
+> completing the swap party, and an unresponsive participant
+> *will* cause the entire sidepool to abort due to the timeout
+> required by this specification.
+> Thus, the pool leader must reduce the probability of an
+> unresponsive participant by checking if all participants can at
+> least respond to the `ping`-`pong` protocol.
+>
+> A TCP connection may be alive as far as the local operating
+> system is concerned, but as TCP is built on top of IP, some IP
+> node along the path between the pool leader and pool follower
+> may have died in the mean time, in such a way that there are no
+> other alternate paths.
+> Thus, the pool leader first ensures that there is a viable IP
+> path by doing an application-level `ping`-`pong` with all
+> pool followers.
+> While an IP node can still die between this `ping`-`pong` and
+> the broadcast of `swap_party_begin`, the scope is smaller and
+> thus this reduces the risk of a swap party timeout and
+> subsequent sidepool abort.
+>
+> If the pool leader can `ping`-`pong` all pool followers, that
+> implies that there exists IP paths from the pool leader to all
+> pool followers that work in both directions.
+> That also implies that each pool follower has a viable IP path
+> from themselves to every other pool follower as well: at the
+> minimum, it can take an IP path from itself to the IP node of
+> the pool leader, then from there to the IP node of another
+> pool follower.
+> Thus, this coordination implies that the pool followers can
+> now (re-)establish connections with each other and perform
+> higher-level protocols triggered by the swap party.
+
 Swap Party Initiation
 ---------------------
 
