@@ -290,18 +290,9 @@ messages.
 If a pool follower has no connection, and the pool leader is
 unable to even complete the BOLT8 handshake for that pool
 follower in some reasonable number of seconds (recommended
-30 seconds), then the pool leader MAY decide to defer the swap
-party for up to 30 minutes, or until the next scheduled period.
-
-Alternately, the pool leader MAY abort the entire pool, i.e.
-initiate a unilateral close by itself.
-See Setup And Teardown (TODO) for how aborts are handled.
-
-> **Rationale** For example, the pool leader may defer a swap
-> party once or a few times, but if too many deferments happen in
-> sequence then the sidepool has become pointless as it cannot be
-> used to manage liquidity, and it may be better to just abort
-> the entire pool.
+30 seconds), then the pool leader SHOULD defer the swap party for
+up to 30 minutes (by delaying and retrying connecting to the
+pool follower later), or until the next scheduled time.
 
 After ensuring that it has a connection to all pool followers,
 the pool leader MUST send a `ping` message with
@@ -310,8 +301,8 @@ the pool leader MUST send a `ping` message with
 
 [BOLT #1 The `ping` and `pong` messages]: https://github.com/lightning/bolts/blob/master/01-messaging.md#the-ping-and-pong-messages
 
-The pool leader MUST wait for a `pong` message from all pool
-followers before continuing with this flow.
+The pool leader MUST wait for a corresponding `pong` message from
+all pool followers before continuing with this flow.
 
 If a pool follower does not respond with a `pong` within 60
 seconds, the pool leader:
@@ -358,6 +349,21 @@ seconds, the pool leader:
 > Thus, this coordination implies that the pool followers can
 > now (re-)establish connections with each other and perform
 > higher-level protocols triggered by the swap party.
+
+As noted above, the pool leader SHOULD defer the swap party if it
+is unable to connect and get `pong` responses in a reasonable
+time frame.
+
+However, the pool leader MAY instead abort the entire pool, if
+swap parties have been persistently deferred due to persistent
+inability to raise all the pool followers.
+See [SIDEPOOL-03][] (TODO: section) for how sidepools are aborted.
+
+> **Rationale** For example, the pool leader may defer a swap
+> party for a few days, but if it is still unable to raise all the
+> pool followers for a swap party after a few days, then the
+> sidepool has become pointless as it cannot be used to manage
+> liquidity, and it may be better to just abort the entire pool.
 
 Swap Party Initiation
 ---------------------
@@ -652,7 +658,8 @@ with a `swap_party_but_nobody_came` message:
 Cancelling a swap party simply means that the swap party ends
 without any updates in the current state.
 The sidepool can still continue operating on future swap parties,
-and nothing is published onchain.
+and nothing is published onchain (i.e. a swap party cancel **is
+not** a sidepool abort).
 
 > **Rationale** The underlying mechanism is heavyweight and has a
 > limited number of updates, and each update increases the total

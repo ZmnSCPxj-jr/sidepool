@@ -830,4 +830,191 @@ and forwardable peerswaps are awesome.
 The HTLC Default Problem
 ========================
 
-(TODO)
+An "*HTLC Default*" is a sadly too-common case where an HTLC in
+some offchain protocol reaches its timelock, instead of being
+fulfilled or failed inside the offchain protocol.
+
+Generally, if an HTLC is *not* fulfilled or failed before the
+timeout, then something has gotten wrong in your interactions
+with the peer --- maybe the peer is dead, or has somehow forgotten
+about the existence of your offchain protoocl, or wants to hurt
+you, or itself has a peer which is not responding about the HTLC,
+etc.
+This generally means that the only recourse is to drop the HTLC
+onchain, which is the only actual thing that can enforce the
+timeout branch of the HTLC.
+
+Obviously, if the HTLC is contained inside some offchain
+construct, the offchain construct needs to also be put onchain
+unilaterally, i.e. a unilateral close.
+
+Sidepools reduce the impact of HTLC Default by the following ways:
+
+* Reduce the number of HTLCs in-flight.
+* Not hosting channels inside the sidepool.
+
+Both the above techniques are intertwined.
+
+Lightning Network channels are expected to have large amounts of
+HTLC activity.
+More HTLCs generally mean more HTLC Defaults.
+
+By avoiding hosting channels inside the sidepool, HTLC Default
+cases are rarer, because the only HTLCs inside the sidepool are
+those directly inside the sidepool.
+Further, sidepools reduce the number of HTLCs *directly* inside
+the sidepool by performing liquidity-management actions during a
+specific time once a day, and by quickly performing HTLC
+resolution during this time.
+
+In sidepool parlance, sidepools conduct *swap parties* once a day,
+which are the times in which sidepool participants use HTLCs in
+the sidepool to swap for HTLCs in Lightning Network channels in
+order to change the liquidity in the channels.
+Each swap party is composed of an *expansion phase* where
+participants offer HTLCs in the sidepool, and a *contraction
+phase* where participants either fulfill or fail HTLCs.
+The time between expansion phase and contraction phase is very
+short (we generally expect this to be measurable in seconds), and
+is the only time in which we expect sidepool HTLCs to exist.
+At all other times, sidepools should only have the funds of each
+participant in plain single-signature outputs.
+
+This is in contrast with techniques like channel factories or
+hierarchical channels.
+In those techniques, an N-of-N (N > 2) offchain mechanism holds
+multiple smaller offchain mechanisms, terminating at channels
+that are expected to continuously pass HTLCs through.
+The larger number of HTLCs translates to a larger expected
+probability of HTLC Default, which leads to unilateral publication
+of at least some part of the offchain mechanism, increasing
+blockspace pressure and increasing global fees.
+
+Let us give some basic Fermi estimates.
+Let us assume that transaction inputs weigh approximately the same
+as transaction outputs, and that the variuos overheads of a
+transaction (`nVersion`, `nLockTime`, number of inputs, number of
+outputs) are negligible compared to actual transaction inputs and
+outputs.
+
+Now, let us assume that there exists *some* nested offchain
+mechanism that can handle an HTLC Default by publishing a
+transaction that spends the funding transaction output (1 input)
+into *only* the defaulting HTLC (1 output) and the rest of the
+funds (1 output)
+(***To be clear, no such mechanism exists, but I am giving the
+most advantage to the alternatives to demonstrate how awesome
+sidepools are really***).
+This transaction is thus 3 units (1 input, 2 outputs).
+
+In the sidepool specification currently being written, a
+unilateral close would involve a kickoff transaction, 5 update
+transactions, and a final update transaction.
+The kickoff transaction and the first 5 update transactions are
+all 1 input, 1 output transactions.
+The final update transaction has 1 input, and has outputs for
+each HTLC and for each participant.
+Let us suppose 4 participants, which translates to 4 per-participant
+outputs and 3 + 2 + 1 HTLCs or 6 HTLCs.
+This sums up to 23 units (6 x 1 input, 6 x 1 output, 1 x 1 input,
+4 x participant outputs, 6 x HTLCs).
+So far, so bad for sidepools?
+
+Now consider: the sidepool will only get into a condition in which
+it is susceptible to HTLC Defaults *once* a day, and it will remain
+in that condition for only a few seconds.
+
+Whereas a nested mechanism (channel factory or hierarchical
+channel) will be susceptible to HTLC Default much more often, due to
+the nested channels being much more active than just a few seconds
+once a day.
+If at least one channel in the nested mechanism gets 10 HTLCs in
+one day --- a laughably low rate for high-activity routing nodes
+--- then the mechanism has 10 times the probability of HTLC
+Default compared to the once-a-day sidepool.
+
+Now, by multiplying the expected probability of HTLC Default times
+the weight of an HTLC Default case, we can see that 10 x 3 units
+of an idealized nested mechanism (which is impossible with current
+technology, and which cannot be improved upon even with
+hypothetical future technology; 1 input and 2 outputs is pretty
+tight) is higher than 1 x 23 units of the actual practical
+(non-idealized!) sidepool.
+
+Thus, HTLC Default is expected to increase the *effective* cost of
+nested mechanisms, because HTLC Default is more likely due to
+HTLCs in channels being *at least* 10 times more common than HTLCs
+in sidepools.
+Even though the current planned implementation for sidepools is
+known to be inefficient (when `SIGHASH_NOINPUT`?), the
+inefficiency is still not an order of magnitude over e.g. tunable
+penalty factories in a hierarchical channel scheme.
+On the other hand, we expect that payments in channels are at
+least an order of magnitude more comomn than liquidity management
+events in sidepools.
+
+Thus, I expect sidepools to remain useful and viable well into the
+foreseeable future.
+
+Sidepools Tradeoffs
+===================
+
+This brings up a question:
+
+* Should we instead consider moving to N > 2 offchain mechanisms
+  and use those for payments directly, instead of 2-participant
+  channels?
+
+To answer the above question satisfactorily, we should consider
+how payments can fail:
+
+* 2-party channels:
+  * Payments are likely to fail due to *liquidity issues*.
+    * Because a 2-party channel "locks" your funds to *only* that
+      participant, a routing node has to be parsimonious and
+      allocate its limited funds to a particular other
+      participant.
+    * If the routing node misjudges this (which is likely due to
+      the high privacy goal of the deployed Lightning Network),
+      then the channel will become depleted and payment fails.
+  * Payments are *un*likely to fail due to *availability issues*.
+    As a channel only has 2 participants, it is likely that the
+    other participant is online while we are online.
+* N-party (N > 2) offchain mechanisms:
+  * Payments are likely to fail due to *availability issues*.
+    * If even one participant is offline, then the payment fails
+      because the offchain state cannot be safely updated.
+      More participants = more chances one of them is offline =
+      more likely to have availability issue.
+    * K-of-N is **not** even a consideration here, as that is
+      custodial and trust-requiring; you can only treat this as
+      trustless if at least N - K participants in addition to you
+      are actually your sockpuppets, but your sockpuppets cannot
+      be sockpuppets of anyone else.
+  * Payments are *un*likely to fail due to *liquidity issues*.
+    * Consider a network with nodes `A`, `B`, `C`, and `D`.
+      If we were constrained to use only 2-party channels, then
+      node `A` would have to split its limited funds between
+      separate 2-party channels with `B`, `C`, and `D`,
+      If it misjudges and it turns out `B` is more popular than
+      its splitting of funds had, then there will be liquidity
+      pressure towards `B` (and circular rebalancing will not be
+      enough, as it just moves the lack of liquidity to another
+      network participant, as I pointed out in an earlier
+      section).
+    * However, if instead all of them were in a 4-party offchain
+      mechanism, `A` could move all its funds to that mechanism
+      without having to split its funding, and all of those funds
+      could effectively be used to forward payments to any of
+      `B`, `C`, and `D`.
+
+Pairing Lightning Network 2-party channels with N-party (N > 2)
+sidepools is a way to shore up the weakness of 2-party channels
+with the strength of N-party (N > 2) sidepools, and vice versa:
+
+* Lightning Network 2-party channels have a *liquidity issue*,
+  but we periodically adjust the balances in once-a-day swap
+  parties with the sidepool.
+* Sidepools have an *availability issue*, but we only use them
+  once a day in liquidity-management actions only, and payments
+  occur over the Lightning Network channels.
