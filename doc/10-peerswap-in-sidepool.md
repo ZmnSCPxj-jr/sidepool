@@ -608,3 +608,524 @@ acceptor.
 > likely to remain viable and desirable even at 0 fee, as the
 > fee here is effectively getting the channel rebalanced without
 > having to pay for the rebalance yourself.
+
+Initiating Peerswap
+-------------------
+
+A pool participant may initiate a peerswap and act as a peerswap
+offerrer, where the offerrer offers in-sidepool funds for
+Lightning funds from the acceptor, using the `peerswap_init`
+message.
+
+1.  `peerswap_init` (1000)
+    - Sent from a peerswap offerrer to a peerswap acceptor.
+2.  TLVs:
+    * `peerswap_init_id` (100000)
+      - Length: 16
+      - Value: The sidepool identifier of the pool on which the
+        peerswap offerrer wants to offer funds in exchange for
+        Lightning funds.
+      - Required.
+    * `peerswap_init_pubkeys` (100002)
+      - Length: 66
+      - Value: A structure composed of:
+        - 33 bytes: 33-byte DER encoding of the offerrer ephemeral
+          public key for the in-sidepool HTLC.
+        - 33 bytes: 33-byte DER encoding of the offerrer
+          persistent public key for the in-sidepool HTLC.
+      - Required.
+    * `peerswap_init_timeouts` (100004)
+      - Length: 8
+      - Value: A structure composed of:
+        - 4 bytes: unsigned big-endian 32-bit number, the
+          timelock of the in-sidepool HTLC, a blockheight.
+        - 4 bytes: unsigned big-endian 32-bit number, the
+          timelock of the in-Lightning HTLC, a blockheight.
+      - Required.
+    * `peerswap_init_hash` (100008)
+      - Length: 32
+      - Value: The 256-bit hash, the hashlock of the HTLCs in the
+        peerswap.
+      - Required.
+    * `peerswap_init_routehints` (100010)
+      - Length: N * (33 + 8 + 2), 0 <= N <= 5
+      - Value: An array of structures:
+        - 33 bytes: DER-encoded 33-byte node ID.
+        - 8 bytes: short channel ID to the above hop.
+        - 2 bytes: unsigned big-endian 16-bit number, the
+          `cltv_expiry_delta` for this hop.
+      - Required.
+    * `peerswap_init_amount_sat` (100012)
+      - Length: 8
+      - Value: unsigned big-endian 64-bit number, the number of
+        satoshis to be offered in-sidepool.
+      - Required.
+    * `peerswap_init_channel_view_msat` (100014)
+      - Length: 24
+      - Value: A structure composed of:
+        - 8 bytes: `owned_by_offerrer`, an unsigned big-endian
+          64-bit number, what the offerrer sees as the amount of
+          millisatoshis it owns unambiguously in all channels with
+          the acceptor, including reserve.
+        - 8 bytes: `owned_by_acceptor`, an unsigned big-endian
+          64-bit number, what the offerrer sees as the amount of
+          millisatoshis the acceptor owns unambiguously in all
+          channels with the offerrer, including reserve.
+        - 8 bytes: `total_capacity`, an unsigned big-endian 64-bit
+          number, what the offerrer sees as the total amount of
+          millisatoshis in all channels with the acceptor,
+          including reserve.
+      - Required.
+    * `peerswap_init_update_counter` (100016)
+      - Length: 2
+      - Value: an unsigned big-endian 16-bit number, the
+        zero-extended value of the 11-bit update counter of the
+        sidepool, as described in [SIDEPOOL-02 Pool Update
+        Counter][].
+        The value is the counter *before* the expansion phase of
+        the swap party, and must be odd.
+      - Required.
+
+[SIDEPOOL-02 Pool Update Counter]: ./02-transactions.md#pool-update-counter
+
+`peerswap_init_pubkeys` contains the ephemeral and persistent
+public keys of the offerrer, as per [SIDEPOOL-06 HTLC Taproot
+Public Key][].
+
+[SIDEPOOL-06 HTLC Taproot Public Key]: ./06-htlcs.md#htlc-taproot-public-key
+
+`peerswap_init_timeouts` contains the blockheights to be used for
+the in-sidepool and in-Lightning HTLCs.
+
+The offerrer:
+
+* MUST set the in-sidepool timeout to greater than or equal to the
+  current blockheight + 4032 + 1.
+* MUST set the in-Lightning HTLC timeout to greater than or equal
+  to the current blockheight + `final_cltv_delta`.
+  * `final_cltv_delta` is the setting it would normally use for
+    `c` / `min_final_cltv_expiry_delta` for invoices it would
+    issue as per [BOLT #11 Tagged Fields Requirements][].
+  * `cltv_expiry` MUST be less than or equal to 2016.
+
+[BOLT #11 Tagged Fields Requirements]: https://github.com/lightning/bolts/blob/master/11-payment-encoding.md#requirements-3
+
+The acceptor:
+
+* MUST check that the in-sidepool timeout is greater than or equal
+  to the current blockheight + 4032.
+* MUST check that:
+  * The in-Lightning timeout is less than the in-sidepool timeout.
+  * The difference between the in-sidepool timeout minus the
+    in-Lightning timeout is greater than or equal to its
+    `cltv_delta`.
+    * `cltv_delta` is the setting it would normally use for
+      `cltv_expiry_delta` in [BOLT #7 The `channel_update`
+       Message][].
+    * `cltv_delta` MUST be less than or equal to 2016.
+
+[BOLT #7 The `channel_update` Message]: https://github.com/lightning/bolts/blob/master/07-routing-gossip.md#the-channel_update-message
+
+> **Rationale** The offerrer gives, for the in-sidepool timeout,
+> blockheight + 4032 + 1 or higher, but the acceptor accepts
+> any value >= blockheight + 4032, because it is possible for both
+> to be out-of-sync.
+> Thus, a small 1-block window is provided.
+>
+> In the worst case, a unilateral abort of the underlying
+> sidepool mechanism would require 432 x 5 (maximum relative
+> lock time for the First through Fifth update transactions
+> in [SIDEPOOL-02 Pool Update Counter][] is 432;
+> because the counter starts at 1, the Last update transaction
+> will start at 0 relative lock time, and every higher update
+> counter value will have equal or shorter time to complete
+> the unilateral abort).
+> This is 2160 blocks for a worst-case sidepool abort.
+> The minimum of current blockheight + 4032 + 1 for the
+> in-sidepool HTLC gives ample time for the HTLC to appear
+> onchain in case of a sidepool abort.
+
+`peerswap_init_hash` is the hash to be used in the hashlock
+branches of both the in-sidepool and in-Lightning HTLCs.
+
+`peerswap_init_routehints` is the sequence of routehints that it
+took from the ultimate offerrer to the current offerrer.
+If the message sender is the actual ultimate offerrer, this MUST
+be empty.
+If the message sender is a forwarder, then this MUST be non-empty,
+and would contain at least the hop from the previous offerrer to
+the forwarder.
+The short channel ID MAY be any value, including an impossible or
+nonexistent channel;
+the receiver MUST ignore the value and simply copy it verbatim.
+
+`peerswap_init_amount_sat` is the amount, in satoshis, of the
+in-sidepool HTLC that the offerrer proposes to the acceptor.
+
+`peerswap_init_channel_view_msat` is what the offerrer believes
+is the current state of all channels between the offerrer and
+the acceptor.
+This view may be stale, as HTLCs can continue to be offerred,
+fulfilled, and failed asynchronously with the peerswap protocol.
+The acceptor MUST NOT use this data to drive its decisionmaking;
+it MUST use its own local view of the channel state.
+However, in case the acceptor decides to reject the peerswap,
+the acceptor SHOULD log the values here to assist in debugging.
+The acceptor MAY log the values even if it accepts the peerswap.
+
+`peerswap_init_update_counter` is the value of the pool update
+counter before the swap party begins.
+
+A node:
+
+* MAY send this message only after `swap_party_begin`:
+  * If the node is a pool follower, after it has received
+    `swap_party_begin`.
+  * If the node is the pool leader, after it has arranged to
+    send `swap_party_begin` to all followers.
+* MUST NOT send this message to a peer that is not a participant
+  of the sidepool it wants to use.
+* MUST NOT send this message more than once to a peer until the
+  swap party of the sidepool has completed, or the sidepool has
+  aborted.
+  - In case the node is a participant of multiple sidepools, and
+    the peer is also a participant of multiple sidepools, the
+    node MUST NOT send this message to a peer more than once
+    until the swap party that triggered the first send has
+    completed or that specific sidepool has aborted.
+* MUST NOT send this message if it is not a valid offerrer to
+  the peer.
+  * A node is a valid offerrer to a peer if, for all the channels
+    between this node and its peer, the [SIDEPOOL-10 Balance
+    Measurement][] result:
+    * The "twice our-side funds" of this node is less than "total
+      channel capacity".
+* MUST set `peerswap_init_amount_sat` such that:
+  * It is greater than or equal to the minimum output amount
+    specified in [SIDEPOOL-02 Output States][].
+  * It is less than the "imbalance error" computed in [SIDEPOOL-10
+    Balance Measurement][].
+    Note that the "imbalance error" is in millisatoshis and
+    `peerswap_init_amount_sat` is in satoshis.
+  * At least one channel with the peer has funds owned by that
+    peer, such that the amount, minus the reserve, is greater than
+    or equal to `peerswap_init_amount_sat`.
+  * If the node cannot achieve all of the above, the node MUST NOT
+    send this message.
+
+[SIDEPOOL-10 Balance Measurement]: #balance-measurement
+
+The receiver of this message:
+
+* MUST check that it, and the sender, are both participants of
+  the sidepool indicated in `peerswap_init_id`.
+* MUST check if a swap party was recently started.
+  * MUST defer processing of this message for up to 5 minutes if
+    it is a pool follower and has not received `swap_party_begin`
+    yet, and resume processing of this message if it
+    receives `swap_party_begin` before then.
+    If it does not receive `swap_party_begin` within 5 minutes,
+    it MUST reject the offer.
+  * MUST check that the pool update counter specified is correct
+    for the current swap party.
+* MUST check that the sender has not sent a previous
+  `peerswap_init`, unless the previous `peerswap_init` is for a
+  swap party that has completed, or a sidepool that has aborted.
+* MUST validate that the sender is a valid offerrer:
+  * The sender is a vliad offerrer to this node if, for all
+    the channels between this node and the sender, the
+    [SIDEPOOL-10 Balance Measurement][] result:
+    * The "twice our-side funds" of this node is greater than or
+      equal to the "total channel capacity".
+* MUST check that the `peerswap_init_amount_sat` was set such that:
+  * It is greater than or equal to the minimum output amount
+    specified in [SIDEPOOL-02 Output States][].
+  * It is less than the "imbalance error" computed in [SIDEPOOL-10
+    Balance Measurement][].
+    Note that the "imbalance error" is in millisatoshis and
+    `peerswap_init_amount_sat` is in satoshis.
+  * At least one channel with the sender has funds owned by this
+    node, such that the amount, minus the reserve, is greater than
+    or equal to `peerswap_init_amount_sat`.
+* MUST check that the `peerswap_init_timeouts` is valid and
+  acceptable to itself, as indicated above.
+
+If the above validation fails, the receiver MUST reject the
+peerswap.
+
+The receiver MAY reject the peerswap for other reasons.
+
+The receiver MAY receive a peerswap with the same sidepool ID
+and hash from two different offerrers.
+The receiver MUST NOT treat this as an error condition, and MUST
+NOT abort the sidepool.
+The receiver SHOULD accept the second `peerswap_init` even if
+it has the same hash; the only requirement this specification
+has is that a sender MUST NOT send `peerswap_init` twice (whether
+hash is the same or not) to a peer until the swap party has
+completed or the sidepool has aborted.
+
+### Rejecting Peerswap
+
+If the receiver of the `peerswap_init` message decides to
+reject the peerswap, it MUST send `peerswap_reject`:
+
+1.  `peerswap_reject` (1098)
+    - Sent in response to `peerswap_init` if the sender decided to
+      reject the peerswap.
+2.  TLVs:
+    * `peerswap_reject_id` (109800)
+      - Length: 16
+      - Value: The sidepool ID in the `peerswap_init` message.
+      - Required.
+    * `peerswap_reject_hash` (109802)
+      - Length: 32
+      - Value: The hash in the `peerswap_init` message.
+      - Required.
+    * `peerswap_reject_reason_code` (109804)
+      - Length: 2
+      - Value: An unsigned big-endian 16-bit number, indicating a
+        machine-readable reason for why the peerswap was rejected.
+      - Required.
+    * `peerswap_reject_reason_text` (109806)
+      - Length: N, 1 <= N <= 255
+      - Value: A human-readable string encoded in UTF-8.
+      - Optional.
+    * `peerswap_reject_channel_view_msat` (109808)
+      - Length: 24
+      - Value: A structure composed of:
+        - 8 bytes: `owned_by_offerrer`, an unsigned big-endian
+          64-bit number, what the acceptor sees as the amount of
+          millisatoshis the offerrer owns unambiguously in all
+          channels with the acceptor, including reserve.
+        - 8 bytes: `owned_by_acceptor`, an unsigned big-endian
+          64-bit number, what the acceptor sees as the amount of
+          millisatoshis it owns unambiguously in all channels with
+          the offerrer, including reserve.
+        - 8 bytes: `total_capacity`, an unsigned big-endian 64-bit
+          number, what the acceptor sees as the total amount of
+          millisatoshis in all channels with the offerrer,
+          including reserve.
+      - Required.
+
+`peerswap_reject_reason_code` MAY have the following values:
+
+| `peerswap_reject_reason_code` | Meaning                                        |
+|-------------------------------|------------------------------------------------|
+| 65535                         | Some policy or rule of this node was violated. |
+| 0                             | No `swap_party_begin` received before timeout. |
+| 1                             | `peerswap_init` already previously sent        |
+| 2                             | Sender is not a valid offerrer.                |
+| 3                             | `peerswap_init_amount_sat` too small.          |
+| 4                             | `peerswap_init_amount_sat` too large.          |
+| 5                             | Timeouts too tight.                            |
+
+`peerswap_reject_reason_code` MAY be set to values not listed in
+the above table; if the receiver does not recognize the value, it
+SHOULD log the value.
+
+`peerswap_reject_reason_text` is ostensibly a human-readable message
+describing why the peerswap was rejected.
+The receiver MUST be careful to sanitize the string of control
+characters and other characters problematic for its setting before
+displaying to human operators, and to make it clear that the message
+comes from a remote node that may not be incentive-aligned to the
+human operator.
+
+`peerswap_reject_channel_view_msat` is what the rejecting node sees
+as the state of the channels between itself and the offerrer.
+The receiver SHOULD log this in addition to the
+`peerswap_reject_reason_code` and `peerswap_reject_reason_text`,
+as well as its local view of the channel state that it sent in the
+`peerswap_init` message.
+
+Receivers of this message:
+
+* MUST check that the sidepool ID and hash corresponds to some
+  previous `peerswap_init` it sent for the current swap party.
+
+If the above validation fails, the receiver SHOULD log the message
+and otherwise ignore it.
+
+Otherwise, if the receiver was the ultimate offerrer of the
+peerswap (i.e. it did not forward the peerswap from another node)
+then it MUST forget the peerswap and MUST NOT create an HTLC for
+it in the sidepool, and MAY continue its participation in the swap
+party.
+
+### Forwarding Initiating And Rejecting Peerswap
+
+The receiver of a `peerswap_init` message may choose to forward
+the peerswap to another node.
+
+* The forwarder MUST have successfully validated the received
+  message as a receiver, as described above, including any policies
+  it may have in addition to the required validations described in
+  this specification.
+* The forwarder MUST only forward the peerswap to another node if
+  it is able to follow all the rules for a node sending this
+  message to that node, as described above.
+
+When forwarding, the following TLVs are modified.
+If it is not possible to modify a TLV to follow one of the rules
+indicated below, the node MUST NOT forward the peerswap.
+
+* `peerswap_init_timeouts`
+  - The timelock of the in-sidepool HTLC MUST remain the same.
+  - The timelock of the in-Lightning HTLC MUST be increased
+    according to the `cltv_delta` of this node.
+  - The difference between the in-sidepool and in-Lightning
+    timelocks MUST be 2016 or more.
+* `peerswap_init_routehints`
+  - The forwarder MUST select any short channel ID, with any
+    value (existing or not, plausible or not).
+  - The forwarder appends the node ID of the sender of the
+    message and the selected short channel ID, as well as its
+    typical `cltv_expiry_delta`, as a new entry at the end of
+    this array.
+  - The array MUST be of length 5 or shorter.
+* `peerswap_init_channel_view_msat`
+  - The forwarder MUST replace this entirely with its view of the
+    channels between itself and the node it intends to forward the
+    message to.
+
+All other TLVs MUST remain the same.
+
+If the node decides to forward the peerswap, it MUST store this
+fact in persistent storage before forwarding `peerswap_init`.
+It MUST store the following information at minimum before
+forwarding `peerswap_init` to its chosen next node:
+
+* The sidepool ID.
+* The hash.
+* The upstream offerrer.
+* The downstream acceptor it chose to forward to.
+* The offerrer ephemeral and persistent public keys for the
+  in-sidepool HTLC.
+* The in-sidepool HTLC timelock.
+* The in-Lightning HTLC timelock from the upstream offerrer.
+* The in-Lightning HTLC timelock it chose to give the downstream
+  offerrer.
+* The amount of the in-sidepool HTLC.
+
+In case of a sidepool abort, it is possible that a forwarded
+in-Lightning HTLC exists.
+
+If the next hop responds with a `peerswap_reject`, the forwarder:
+
+* MAY try to forward to a different node, updating the persistent
+  store as necessary.
+* Otherwise, SHOULD accept the peerswap at this node.
+  * The forwarder MUST delete the fact that it wanted to forward
+    the peerswap from persistent storage before accepting it at
+    this node.
+  * MAY reject the peerswap, but MUST generate its own
+    `peerswap_reject` and related information.
+
+> **Rationale** The forwarder must have validated the
+> `peerswap_init` from the offerrer before it decided to forward
+> the peerswap.
+> Thus, the forwarder must already have been prepared to accept
+> the peerswap from the offerrer, even if the downstream acceptor
+> rejected the peerswap.
+
+Accepting Peerswap
+------------------
+
+If the receiver of the `peerswap_init` decides to accept the
+peerswap, it is now a peerswap acceptor.
+
+The acceptor first generates the hop from itself to the
+offerrer, by selecting any short channel ID (existing or not,
+plausible or not).
+It then provides its `cltv_expiry_delta` and the node from
+which it received the `peerswap_init`, and adds it to the
+routehint it received, then feeds that routehing back to
+the offerrer.
+
+The acceptor also generates its in-sidepool HTLC ephemeral and
+persistent keypairs, as described in [SIDEPOOL-06 HTLC Taproot
+Public Key][].
+
+The acceptor then responds with a `peerswap_accept`:
+
+1.  `peerswap_accept` (1002)
+    - Sent by an acceptor in response to an accepted
+      `peerswap_init`.
+2.  TLVs:
+    * `peerswap_accept_id` (100200)
+      - Length: 16
+      - Value: The sidepool identifier in the `peerswap_init`
+        message.
+      - Required.
+    * `peerswap_accept_hash` (100202)
+      - Length: 32
+      - Value: The 256-bit hash, the hashlock of the HTLCs in the
+        peerswap.
+      - Required.
+    * `peerswap_accept_pubkeys` (100204)
+      - Length: 66
+      - Value: A structure composed of:
+        - 33 bytes: 33-byte DER encoding of the acceptor ephemeral
+          public key for the in-sidepool HTLC.
+        - 33 bytes: 33-byte DER encoding of the acceptor
+          persistent public key for the in-sidepool HTLC.
+      - Required.
+    * `peerswap_accept_routehints` (100206)
+      - Length: N * (33 + 8 + 2), 1 <= N <= 6
+      - Value: An array of structures:
+        - 33 bytes: DER-encoded 33-byte node ID.
+        - 8 bytes: short channel ID to the above hop.
+        - 2 bytes: unsigned big-endian 16-bit number, the
+          `cltv_expiry_delta` for this hop.
+      - Required.
+
+`peerswap_accept_hash` is the hash indicated in the
+`peerswap_init` message.
+
+`peerswap_accept_pubkeys` contains the ephemeral and persistent
+public keys of the acceptor, as per [SIDEPOOL-06 HTLC Taproot
+Public Key][].
+
+`peerswap_accept_routehints` contains the route to be used from
+the ultimate offerrer (which will receive the corresponding
+in-Lightning payment) to the ultimate acceptor (which will send the
+in-Lightning payment).
+The ultimate acceptor MUST take the routehints it got from
+`peerswap_init` and append exactly one entry to it, containing the
+node ID of the `peerswap_init` sender, the short channel ID it
+chose, and its `cltv_expiry_delta`.
+
+The receiver of this message MUST perform the validations below:
+
+* It previously sent `peerswap_init` to the sender, and the
+  sidepool ID and hash matches the one in `peerswap_init`.
+
+If the above validation fails, the receiver of the message SHOULD
+log and ignore the message.
+
+If th above validation succeeds, the receiver of the message MUST
+perform the validations below:
+
+* The routehints includes the routehints it sent in the
+  `peerswap_init` as a prefix, and is at least one entry longer.
+  * The routehint entry at the index after the prefix it sent
+    contains itself as the node ID.
+    e.g. if it previously sent `peerswap_init` with 0 entries
+    in the routehint, then the `peerswap_accept` routehints
+    must be at least length 1 or greater, and the 0th entry MUST
+    have itself as the node ID.
+
+If the above validation fails, the receiver of the message MUST
+abort the sidepool.
+
+### Forwarding Accepting Peerswap
+
+If the sender of `peerswap_init` forwarded it from another peer,
+and it receives a `peerswap_accept`:
+
+* It MUST validate the message as described above.
+* It MUST forward the message as-is to the peer it forwarded the
+  peerswap from.
+
+(TODO)
