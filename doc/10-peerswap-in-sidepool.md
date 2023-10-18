@@ -647,20 +647,29 @@ message.
       - Value: The 256-bit hash, the hashlock of the HTLCs in the
         peerswap.
       - Required.
-    * `peerswap_init_routehints` (100010)
+    * `peerswap_init_offerrer` (100010)
+      - Length: 33
+      - Value: A DER-encoded 33-byte node ID.
+      - Required.
+    * `peerswap_init_cltv_final` (100012)
+      - Length: 4
+      - Value: unsigned big-endian 32-bit number, a number of
+        blocks to use as the `min_final_cltv_expiry_delta`.
+      - Required.
+    * `peerswap_init_routehints` (100014)
       - Length: N * (33 + 8 + 2), 0 <= N <= 5
       - Value: An array of structures:
-        - 33 bytes: DER-encoded 33-byte node ID.
         - 8 bytes: short channel ID to the above hop.
         - 2 bytes: unsigned big-endian 16-bit number, the
           `cltv_expiry_delta` for this hop.
+        - 33 bytes: DER-encoded 33-byte node ID.
       - Required.
-    * `peerswap_init_amount_sat` (100012)
+    * `peerswap_init_amount_sat` (100016)
       - Length: 8
       - Value: unsigned big-endian 64-bit number, the number of
         satoshis to be offered in-sidepool.
       - Required.
-    * `peerswap_init_channel_view_msat` (100014)
+    * `peerswap_init_channel_view_msat` (100018)
       - Length: 24
       - Value: A structure composed of:
         - 8 bytes: `owned_by_offerrer`, an unsigned big-endian
@@ -676,7 +685,7 @@ message.
           millisatoshis in all channels with the acceptor,
           including reserve.
       - Required.
-    * `peerswap_init_update_counter` (100016)
+    * `peerswap_init_update_counter` (100020)
       - Length: 2
       - Value: an unsigned big-endian 16-bit number, the
         zero-extended value of the 11-bit update counter of the
@@ -747,6 +756,16 @@ The acceptor:
 
 `peerswap_init_hash` is the hash to be used in the hashlock
 branches of both the in-sidepool and in-Lightning HTLCs.
+
+`peerswap_init_offerrer` is the ultimate offerrer of the peerswap.
+If the message sender is the actual ultimate offerrer, this MUST
+be its own node ID.
+If the message sender is a forwarder, then this MUST NOT be its
+own node ID, but be copied verbatim from the incoming
+`peerswap_init`.
+
+`peerswap_init_cltv_final` is the final CLTV-delta for the
+offerrer.
 
 `peerswap_init_routehints` is the sequence of routehints that it
 took from the ultimate offerrer to the current offerrer.
@@ -979,11 +998,10 @@ indicated below, the node MUST NOT forward the peerswap.
 * `peerswap_init_routehints`
   - The forwarder MUST select any short channel ID, with any
     value (existing or not, plausible or not).
-  - The forwarder appends the node ID of the sender of the
-    message and the selected short channel ID, as well as its
-    typical `cltv_expiry_delta`, as a new entry at the end of
-    this array.
-  - The array MUST be of length 5 or shorter.
+  - The forwarder appends the selected short channel ID and its
+    own node ID, as well as its typical `cltv_expiry_delta`, as a
+    new entry at the end of this array.
+  - The resulting array MUST be of length 5 or shorter.
 * `peerswap_init_channel_view_msat`
   - The forwarder MUST replace this entirely with its view of the
     channels between itself and the node it intends to forward the
@@ -1074,10 +1092,10 @@ The acceptor then responds with a `peerswap_accept`:
     * `peerswap_accept_routehints` (100206)
       - Length: N * (33 + 8 + 2), 1 <= N <= 6
       - Value: An array of structures:
-        - 33 bytes: DER-encoded 33-byte node ID.
         - 8 bytes: short channel ID to the above hop.
         - 2 bytes: unsigned big-endian 16-bit number, the
           `cltv_expiry_delta` for this hop.
+        - 33 bytes: DER-encoded 33-byte node ID.
       - Required.
 
 `peerswap_accept_hash` is the hash indicated in the
@@ -1093,8 +1111,8 @@ in-Lightning payment) to the ultimate acceptor (which will send the
 in-Lightning payment).
 The ultimate acceptor MUST take the routehints it got from
 `peerswap_init` and append exactly one entry to it, containing the
-node ID of the `peerswap_init` sender, the short channel ID it
-chose, and its `cltv_expiry_delta`.
+the short channel ID it chose, its `cltv_expiry_delta`, and its own
+node ID.
 
 The receiver of this message MUST perform the validations below:
 
@@ -1109,12 +1127,6 @@ perform the validations below:
 
 * The routehints includes the routehints it sent in the
   `peerswap_init` as a prefix, and is at least one entry longer.
-  * The routehint entry at the index after the prefix it sent
-    contains itself as the node ID.
-    e.g. if it previously sent `peerswap_init` with 0 entries
-    in the routehint, then the `peerswap_accept` routehints
-    must be at least length 1 or greater, and the 0th entry MUST
-    have itself as the node ID.
 
 If the above validation fails, the receiver of the message MUST
 abort the sidepool.
@@ -1127,5 +1139,196 @@ and it receives a `peerswap_accept`:
 * It MUST validate the message as described above.
 * It MUST forward the message as-is to the peer it forwarded the
   peerswap from.
+
+Creating Sidepool HTLC And BOLT11 Invoice
+-----------------------------------------
+
+On receiving the `peerswap_accept`, the ultimate offerrer of the
+peerswap constructs the in-sidepool HTLC address as per
+[SIDEPOOL-06 HTLC Taproot Public Key][].
+
+The ultimate offerrer then includes the address, as well as the
+amount it indicated in the `peerswap_init_amount_sat`, in the
+`swap_party_expand_request` message to the pool leader if it is a
+pool follower, or equivalent functionality if it is the pool
+leader.
+See [SIDEPOOL-04 Expansion Phase Requests][].
+
+Once the offerrer, any forwarders, and the acceptor have finished
+the expansion phase request, they then wait for [SIDEPOOL-04
+Expansion Phase State Validation][].
+
+At this point, the offerrer, forwarders, and acceptor MUST:
+
+* Check if the [SIDEPOOL-06 HTLC Taproot Public Key][] was created
+  in the expansion phase, with an amount exactly equal to the
+  `peerswap_init_amount_sat`.
+
+If the above validation fails, the offerrer, forwarders, and
+acceptor simply forget this peerswap.
+
+The offerrer, since it is the pool participant that requests for
+the creation of the HTLC output, MUST follow the validation rules
+indicated in [SIDEPOOL-04 Expansion Phase State Validation][] if
+it is a pool follower and the in-sidepool HTLC output does not
+exist.
+
+The forwarders and acceptor do not have any additional rules or
+specified behavior if the in-sidepool HTLC output does not exist.
+
+After the offerrer has completed the expansion phase state
+validation and provided its signature for the expansion phase
+state, the offerrer generates the BOLT11 invoice.
+
+> **Rationale** A BOLT11 invoice is the least common denominator
+> that allows implementation of a forwardable peerswap acceptor
+> across all extant Lightning Network node implementations.
+>
+> The routehint built by the `peerswap_init`-`peerswap_accept`
+> protocol is necessary as LDK HTLC interception requires that
+> an SCID be acquired from LDK, which will then be used to
+> trigger interception of the HTLC, in order to override the
+> normal fee requirements of LDK forwarding.
+> This information needs to be transferred from all forwarders
+> to the acceptor.
+> This is the reason why the short channel ID is allowed to be
+> any value, including impossible or invalid values.
+>
+> Other Lightning Network node implementations allow for more
+> flexible interception, in order to implement 0-fee forwarding,
+> and thus may use any short channel ID, including a constant
+> invalid short channel ID like 0x0x0.
+> Such implementations can trigger interception and 0-fee
+> forwarding by inspecting the payment hash instead of the short
+> channel ID.
+>
+> In theory, the route to the ultimate offerrer could have been
+> built as a BOLT12 blinded route instead.
+> However, blinded route support is not as widely-deployed at the
+> time of this routing as BOLT11 routehint support; in particular,
+> sending to a blinded route may not have easy-to-use interfaces
+> on all implementations, but paying to a BOLT11 invoices is
+> readily available on all implementations.
+
+The BOLT11 invoice is sent by the offerrer to the acceptor via the
+`peerswap_invoice` message:
+
+1.  `peerswap_invoice` (1004)
+    - Sent by the offerrer to the acceptor to indicate the BOLT11
+      invoice.
+2.  TLVs:
+    * `peerswap_invoice_id` (100400)
+      - Length: 16
+      - Value: The sidepool ID that the peerswap is done inside
+        of.
+      - Required.
+    * `peerswap_invoice_bolt11` (100402)
+      - Length: N
+      - Value: The ASCII encoding of the BOLT11 invoice.
+      - Required.
+
+The receiver of the `peerswap_invoice` message MUST perform the
+validation below:
+
+* It recognizes the sidepool ID, and that the sender and the
+  receiver are both participants of the indicated sidepool.
+* It parses the invoice and extracts the `payment_hash` / `p`,
+  which must match the `peerswap_init_hash` of some peerswap it
+  accepted before, whether as a forwarder or as an ultimate
+  acceptor, from the sender.
+
+If any of the above checks fail, the receiver MUST ignore the
+message and SHOULD log it is an unusual event.
+
+Then, the forwarder or acceptor MUST validate the BOLT11 invoice
+in detail as specified in the next section.
+
+### BOLT11 Invoice Generation And Validation
+
+The offerrer, any forwarders, and the acceptor, MUST determine
+the following:
+
+* The "post-tax amount" of the in-sidepool HTLC output, as per
+  [SIDEPOOL-02 Onchain Fee Charge Distribution][], for the
+  expansion phase state.
+
+[SIDEPOOL-02 Onchain Fee Charge Distribution]: ./02-transactions.md#onchain-fee-charge-distribution
+
+The offerrer MUST set the following bits in the BOLT11 feature
+bits array `9`:
+
+* Bit 8: require `var_onion_optin`.
+* Bit 14: require `payment_secret`.
+
+The offerrer MUST NOT set any other bits, even if it would
+normally set them for "normal" invoices.
+
+The offerrer MUST set the human-readable part as per
+[BOLT #11 Human-Readable Part][]:
+The forwarders and the acceptor MUST check these as well.
+
+* The `prefix` is correct for the network the offerrer and the
+  sidepool is operating in.
+* The `amount` is the **"post-tax amount"** of the in-sidepool
+  HTLC.
+  * This will usually be less than the `peerswap_init_amount_sat`,
+    but may be larger if the pool leader selected the in-sidepool
+    HTLC as the onchain fee tax overpayment beneficiary.
+
+[BOLT #11 Human-Readable Part]: https://github.com/lightning/bolts/blob/master/11-payment-encoding.md#human-readable-part
+
+The offerrer then sets the data part as per [BOLT #11 Data Part][].
+The forwarders and the acceptor also validate these as well.
+All tagged fields MUST be indicated at most once, and not repeated.
+
+* The `timestamp` MUST be set to offerrer view of the current
+  time.
+  The acceptor MUST accept a `timestamp` of up to one hour before
+  to one hour after its view of the current time, while any
+  forwarders MUST ignore the timestamp.
+* The `payment_hash` / `p` MUST be set to the value indicated in
+  `peerswap_init_hash`.
+* The `payment_secret` / `s` MUST be set.
+  The offerrer MAY set it to any value, and SHOULD set it to a
+  256-bit number indistinguishable from random.
+* The `description` / `d` MUST be set to the ASCII encoding of
+  the exact string `"forwardable-peerswap"` *without* the double
+  quotation marks and *without* a trailing NUL character.
+* The `metadata` / `m` MUST NOT be set.
+* The `destination` / `n` MUST be set to the offerrer indicated
+  in `peerswap_init_offerrer`.
+* The `description_hash` / `h` MUST NOT be set.
+* The `expiry` / `x` MUST be set to 24 * 60 * 60 = 86400 (1 day).
+* The `min_final_cltv_expiry_delta` / `c` MUST be set to the
+  `peerswap_init_cltv_final`.
+* The `fallback_address` / `f` MUST NOT be set.
+* The `routehint` / `r` MUST be set, and contains the routehints
+  indicated in the `peerswap_accept_routehints`.
+  The `fee_base_msat` and `fee_proportional_millionths` fields of
+  each entry MUST be set to 0.
+* The `featurebits` / `9` MUST be set, to the feature bits
+  specified above.
+* Tagged fields other than the above MUST NOT be set.
+
+[BOLT #11 Data Part]: https://github.com/lightning/bolts/blob/master/11-payment-encoding.md#data-part
+
+The invoice MUST be signed.
+
+If any of the above validations fail for a forwarder or for the
+acceptor, the forwarder or acceptor MUST abort the sidepool.
+
+Any forwarders MUST forward the `peerswap_invoice` message
+verbatim.
+
+The acceptor performs the following additional validation:
+
+* The current blockheight, plus the `min_final_cltv_expiry_delta`
+  / `c`, plus all of the `cltv_expiry_delta`s in the `routehints`
+  / `r`, must be less than or equal to the in-sidepool timeout
+  indicated in `peerswap_init_timeouts`.
+
+If the above validation fails, the acceptor MUST refund the
+peerswap, as per [SIDEPOOL-10 Refunding Peerswap][] instead of
+attempting to pay the invoice.
 
 (TODO)
