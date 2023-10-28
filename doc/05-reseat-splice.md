@@ -201,3 +201,131 @@ The fund can then be spliced-in, if:
     key, thus failing this condition on the next swap party.
 
 (TODO)
+
+Random Transaction Input And Output Ordering
+============================================
+
+Splice transactions have their inputs and outputs
+deterministically shuffled in a multiparty computation.
+
+> **Rationale** Ideally, all wallets should implement
+> [BIP-0069][], deterministic lexicographical indexing of
+> transaction inputs and outputs.
+>
+> [BIP-0069]: https://github.com/bitcoin/bips/blob/737879123512f47506de996625615da533d390fb/bip-0069.mediawiki
+>
+> Sadly, few wallets support [BIP-0069][] and most wallets instead
+> shuffle the order of transaction inputs and outputs, as that is
+> actually more private (has a larger anonymity set) in practice
+> than BIP-0069.
+>
+> Thus, multiparticipant protocols that need to build
+> multiple-input and multiple-output transactions must, by
+> necessity, include a complicated multiparty transaction input
+> and output shuffling sub-protocol.
+> Sidepools are no exception to this.
+>
+> As sidepools are not intended to be used publicly, and thus have
+> no advantage in being known by the rest of the network, it is
+> best to reduce the amount of knowledge that
+> non-sidepool-participants learn about the sidepool, thus privacy
+> is a design goal as well; non-sidepool-participants should find
+> it difficult to determine if some transaction is a sidepool
+> splice transaction or not.
+
+All sidepool participants need to know the entire shuffled deck,
+thus, many of the problems with multiparty shuffling (which
+requires that only those issued with a particular card in the
+shuffled deck learn the card and can later cryptographically prove
+that a particular card was issued to them) are not present.
+This multiparty shuffling protocol is therefore not appropriate
+for card games between cryptographers, as all participants learn
+the ordering of the deck, and MUST NOT be used as such.
+
+The PRNG seed flow is as follows:
+
+* Each participant picks a 256-bit number uniformly at random.
+  Call this "*per-participant shuffling seed*"
+* Each participant hashes their per-participant shuffling seed,
+  then all the pool followers send it to the pool leader, who
+  broadcasts all the per-participant shuffling seed hashes to all
+  pool followers.
+  Each pool follower validates that their hash exists in the
+  broadcast.
+* Once each pool participant has received all the hashes, pool
+  followers send the per-participant shuffling seed (i.e. the
+  preimage to the hash) to the pool leader, which validates the
+  seeds.
+  The pool leader then broadcasts all the per-participant
+  shuffling seeds to all pool followers.
+* All the pool followers validate that each per-participant
+  shuffling seed matches (i.e. the preimage to the hash).
+* All pool participants XOR each of the per-participant shuffling
+  seeds together to form the "*total shuffling seed*".
+
+The actual shuffling is performed using Fisher-Yates shuffle with
+the total shuffling seed used as the seed to a repeated tagged
+hash as a CSPRNG.
+Inputs are shuffled first, then outputs.
+
+* Sort the transaction inputs and outputs using [BIP-0069][].
+* Set the current CSPRNG state (a 256-bit number) to the
+  total shuffling seed.
+* For `i` = `num_inputs - 1` to `1`:
+  * Get the tagged 256-bit SHA-2 hash of the current CSPRNG state,
+    with tag `"sidepool version 1 shuffle"` not including the
+    double quotation marks and not including any terminating NUL
+    characters, and replace the state with the hash.
+  * Treat the first 8 bytes of the state as a *little-endian*
+    64-bit unsigned integer.
+  * Let `j` be the above number modulo `i + 1`.
+  * If `i` and `j` are different, swap the transaction inputs
+    numbered `i` and `j` (0-indexed).
+* For `i` = `num_outputs - 1` to `1`:
+  * Get the tagged 256-bit SHA-2 hash of the current CSPRNG state,
+    with tag `"sidepool version 1 shuffle"` not including the
+    double quotation marks and not including any terminating NUL
+    characters, and replace the state with the hash.
+  * Treat the first 8 bytes of the state as a *little-endian*
+    64-bit unsigned integer.
+  * Let `j` be the above number modulo `i + 1`.
+  * If `i` and `j` are different, swap the transaction outputs
+    numbered `i` and `j` (0-indexed).
+
+> **Rationale** While the rest of the protocol uses big-endian
+> numbers, this is because the standard "network ordering" is
+> big-endian.
+> Modern CPUs are predominantly little-endian, thus the 64-bit
+> random number is little-endian.
+>
+> The above includes a small bias due to the naive use of
+> modulo, i.e. modulo bias.
+> However, it is expected that using a 64-bit number should, in
+> practice, have a negligible modulo bias for most practical
+> numbers of inputs and outputs, and 64-bit modulo is widely
+> implemented in most languages and CPUs.
+> Debiasing modulo may gretly increase the complexity and
+> practical runtime of the shuffling algorithm, thus this is
+> considered an acceptable trade-off.
+>
+> The use of a repeated hash function instead of a true
+> deterministic cryptographically-secure random number generator
+> is generally considered bad design.
+> However, this only holds if an adversary can meaningfully
+> control the seed, and the use of precommitment hashes for each
+> per-participant shuffling seed prevents that.
+> As sidepool participants are expected to use HTLCs, and HTLCs
+> in Bitcoin predominantly use SHA-256, sidepool implementations
+> are already expected to have a SHA-256 implementation, from
+> which a tagged hash implementation can trivially be built.
+> This reduces the effort of implementing sidepools, compared to
+> requiring a particular CSPRNG algorithm.
+>
+> The shuffling algorithm must be described in detail here (and
+>  reimplemented in each implementation of the sidepool protocols)
+> as various standard libraries across various language
+> implementations, even if they implement a Fisher-Yates or
+> equivalent-quality shuffle with low or no modulo bias, are
+> not assured to be identical to each other and are frequently
+> not assured of keeping the same deterministic algorithm forever.
+> Yes, sometimes NIH is necessary.
