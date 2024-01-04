@@ -422,8 +422,11 @@ sidepool output state regardless of whether or not forwarding
 occurred, and if validation succeeds, it does not matter to it
 whether the protocol was done via proxy (forwarding) or directly.
 
-Protocol Flow Detail
-====================
+Protocol Flow Overview
+======================
+
+Below is the overview of the "happy path" case where the forwardable
+peerswap completes successfully:
 
 * When the pool leader announces a swap party via a [SIDEPOOL-04][]
   `swap_party_begin` message, pool participants determine if they
@@ -524,17 +527,7 @@ persistent store:
 > This may preclude such implementations from being able to
 > implement peerswap forwarding, or require re-implementation of
 > that behavior in sidepool implementation code if the underlying
-> implementation exposes enough functionality to implement this
-> (such as CLN `htlc_accepted` hook, which are re-issued on
-> restart and thus on restart allow the incoming HTLC to remain
-> in-flight, but not LDK interception SCIDs, which fail the
-> incoming HTLCs on restart if forwarding is not delegated to
-> LDK; in particular, LDK forwarding requires a fee equal to or
-> greater than the normal channel fee to be charged, but this
-> specification mandates that peerswap forwarders do not charge a
-> fee in the Lightning part of the forwarded peerswap, CLN
-> allows you to override this if you implement the persistent
-> tracking of HTLC forwardings yourself).
+> implementation exposes enough functionality to implement this.
 >
 > Due to the possible need to re-implement it for sidepool
 > implementations, the above requirements are re-iterated here.
@@ -607,6 +600,9 @@ acceptor.
 > fee here is effectively getting the channel rebalanced without
 > having to pay for the rebalance yourself.
 
+Protocol Flow Detail
+====================
+
 Initiating Peerswap
 -------------------
 
@@ -645,29 +641,16 @@ message.
       - Value: The 256-bit hash, the hashlock of the HTLCs in the
         peerswap.
       - Required.
-    * `peerswap_init_offerrer` (100010)
-      - Length: 33
-      - Value: A DER-encoded 33-byte node ID.
-      - Required.
-    * `peerswap_init_cltv_final` (100012)
-      - Length: 4
-      - Value: unsigned big-endian 32-bit number, a number of
-        blocks to use as the `min_final_cltv_expiry_delta`.
-      - Required.
-    * `peerswap_init_routehints` (100014)
-      - Length: N * (33 + 8 + 2), 0 <= N <= 5
-      - Value: An array of structures:
-        - 8 bytes: short channel ID to the above hop.
-        - 2 bytes: unsigned big-endian 16-bit number, the
-          `cltv_expiry_delta` for this hop.
-        - 33 bytes: DER-encoded 33-byte node ID.
-      - Required.
-    * `peerswap_init_amount_sat` (100016)
+    * `peerswap_init_hops` (100010)
+      - Length: 1
+      - Value: unsigned 8-bit number, a number of allowed hops
+        remaining for forwarding.
+    * `peerswap_init_amount_sat` (100012)
       - Length: 8
       - Value: unsigned big-endian 64-bit number, the number of
         satoshis to be offered in-sidepool.
       - Required.
-    * `peerswap_init_channel_view_msat` (100018)
+    * `peerswap_init_channel_view_msat` (100014)
       - Length: 24
       - Value: A structure composed of:
         - 8 bytes: `owned_by_offerrer`, an unsigned big-endian
@@ -683,7 +666,7 @@ message.
           millisatoshis in all channels with the acceptor,
           including reserve.
       - Required.
-    * `peerswap_init_update_counter` (100020)
+    * `peerswap_init_update_counter` (100016)
       - Length: 2
       - Value: an unsigned big-endian 16-bit number, the
         zero-extended value of the 11-bit update counter of the
@@ -692,6 +675,18 @@ message.
         The value is the counter *before* the expansion phase of
         the swap party, and must be odd.
       - Required.
+    * `peerswap_init_max_htlc_msat` (100018)
+      - Length: 8
+      - Value: an unsigned big-endian 64-bit number, in
+        millisatoshi; the maximum in-Lightning HTLC size of all
+        channels from the ultimate offerrer to the receiver of
+        this message.
+      - Required.
+    * `peerswap_init_lcd_fallback` (100098)
+      - Length: 0
+      - Optional.
+        If present, indicates that the least-common-denominator
+        fallback protocol will be used.
 
 [SIDEPOOL-02 Pool Update Counter]: ./02-transactions.md#pool-update-counter
 
@@ -755,26 +750,16 @@ The acceptor:
 `peerswap_init_hash` is the hash to be used in the hashlock
 branches of both the in-sidepool and in-Lightning HTLCs.
 
-`peerswap_init_offerrer` is the ultimate offerrer of the peerswap.
-If the message sender is the actual ultimate offerrer, this MUST
-be its own node ID.
-If the message sender is a forwarder, then this MUST NOT be its
-own node ID, but be copied verbatim from the incoming
-`peerswap_init`.
-
-`peerswap_init_cltv_final` is the final CLTV-delta for the
-offerrer.
-
-`peerswap_init_routehints` is the sequence of routehints that it
-took from the ultimate offerrer to the current offerrer.
-If the message sender is the actual ultimate offerrer, this MUST
-be empty.
-If the message sender is a forwarder, then this MUST be non-empty,
-and would contain at least the hop from the previous offerrer to
-the forwarder.
-The short channel ID MAY be any value, including an impossible or
-nonexistent channel;
-the receiver MUST ignore the value and simply copy it verbatim.
+`peerswap_init_hops` is the number of remaining hops allowed
+for forwarding.
+It MUST be a value between 0 to 10.
+The ultimate offerrer SHOULD set this to a random value from
+5 to 10.
+The receiver of this messsage MUST NOT forward the peerswap
+if the `peerswap_init_hops` value is 0.
+Otherwise, if the receiver of this message decides to forward,
+it MUST forward a `peerswap_init_hops` that is exactly 1 lower
+than what it received.
 
 `peerswap_init_amount_sat` is the amount, in satoshis, of the
 in-sidepool HTLC that the offerrer proposes to the acceptor.
@@ -786,12 +771,66 @@ This view may be stale, as HTLCs can continue to be offerred,
 fulfilled, and failed asynchronously with the peerswap protocol.
 The acceptor MUST NOT use this data to drive its decisionmaking;
 it MUST use its own local view of the channel state.
+This field only exists as an advisory.
 However, in case the acceptor decides to reject the peerswap,
 the acceptor SHOULD log the values here to assist in debugging.
 The acceptor MAY log the values even if it accepts the peerswap.
 
 `peerswap_init_update_counter` is the value of the pool update
-counter before the swap party begins.
+counter *before* the swap party began.
+
+`peerswap_init_max_htlc_msat` is the lowest `htlc_maximum_msat`
+setting among all channels from the ultimate offerrer to the
+current receiver of this message, as determined by the latest
+[BOLT #7 `channel_update` Message][] coming from the receiver.
+
+[BOLT #7 `channel_update` Message]: https://github.com/lightning/bolts/blob/8a64c6a1cef979b3f0cecb00ba7a48c2d28b3588/07-routing-gossip.md#the-channel_update-message
+
+`peerswap_init_lcd_fallback` is an optional flag.
+If present, it indicates that the protocol to be used is the
+least-common-denominator fallback:
+
+* In least-common-denominator fallback protocol:
+  - Forwarders assist in creating a cleartext routehint from
+    the ultimate offerrer to the ultimate acceptor.
+  - A number of invoices are issued by the ultimate offerrer
+    of the peerswap.
+  - The ultimate acceptor pays the invoices in order to claim
+    the in-sidepool HTLC.
+* In normal protocol:
+  - The ultimate offerrer creates multiple one-layer onions
+    that let it claim the final in-Lightning HTLC.
+  - Each forwarder either:
+    - adds an onion layer and forwards that.
+    - locally stores its received onion and creates a
+      one-layer onion, which will trigger it to send the
+      stored onion to its local offerrer.
+  - The ultimate acceptor sends out `update_add_htlc`s with
+    the onions they receive.
+
+> **Rationale** The least-common-denominator fallback
+> protocol allows SIDEPOOL implementations to be implemented
+> on top of certain Lightning Network node software.
+>
+> In particular, CLN can handle generating onion layers
+> cooperatively from the ultimate offerrer through the
+> forwarders, and at the ultimate acceptor, has the `sendonion`
+> RPC that allows a SIDEPOOL plugin implementation to send
+> out the cooperatively-created onion.
+>
+> Unfortunately, while LDK allows the caller to generate
+> onion layers at the ultimate offerrer and through the
+> forwarders, it **does not** have any exposed API that
+> allows an arbitrary payment onion to be sent.
+> This means that the normal protocol flow can be implemented
+> by LDK for the ultimate offerrer and forwarders, but ***not***
+> for the ultimate acceptor.
+>
+> Thus, the fallback path exists in order to support the case that
+> LDK is the ultimate acceptor.
+>
+> The hope is that future versions of LDK will expose an API that
+> **does** allow an arbitrary payment onion to be sent.
 
 A node:
 
@@ -824,11 +863,15 @@ A node:
     Balance Measurement][].
     Note that the "imbalance error" is in millisatoshis and
     `peerswap_init_amount_sat` is in satoshis.
-  * At least one channel with the peer has funds owned by that
-    peer, such that the amount, minus the reserve, is greater than
-    or equal to `peerswap_init_amount_sat`.
-  * If the node cannot achieve all of the above, the node MUST NOT
-    send this message.
+* MUST set `peerswap_init_max_htlc_msat` to either the lowest
+  `htlc_maximum_msat` setting of all channels with the peer, in
+  the direction coming from the peer, OR to any value lower than
+  that.
+  * MUST ensure that the following inequality holds:
+    * `(peerswap_init_amount_sat * 1000) / peerswap_init_max_htlc_msat`,
+      rounded UP, is less than or equal to `peerswap_max_splits` (40).
+* If the node cannot achieve all of the above, the node MUST NOT
+  send this message.
 
 [SIDEPOOL-10 Balance Measurement]: #balance-measurement
 
@@ -866,6 +909,13 @@ The receiver of this message:
     or equal to `peerswap_init_amount_sat`.
 * MUST check that the `peerswap_init_timeouts` is valid and
   acceptable to itself, as indicated above.
+* MUST check that the `peerswap_init_max_htlc_msat` is less than
+  or equal to the lowest `htlc_maximum_msat` it has set among all
+  channels, in the direction of the receiver of the message to the
+  sender of this message.
+  * MUST check that the following inequality holds:
+    * `(peerswap_init_amount_sat * 1000) / peerswap_init_max_htlc_msat`,
+      rounded UP, is less than or equal to `peerswap_max_splits` (40).
 
 If the above validation fails, the receiver MUST reject the
 peerswap.
@@ -936,6 +986,7 @@ reject the peerswap, it MUST send `peerswap_reject`:
 | 3                             | `peerswap_init_amount_sat` too small.          |
 | 4                             | `peerswap_init_amount_sat` too large.          |
 | 5                             | Timeouts too tight.                            |
+| 6                             | Too many splits.                               |
 
 `peerswap_reject_reason_code` MAY be set to values not listed in
 the above table; if the receiver does not recognize the value, it
@@ -980,31 +1031,43 @@ the peerswap to another node.
   message as a receiver, as described above, including any policies
   it may have in addition to the required validations described in
   this specification.
-* The forwarder MUST only forward the peerswap to another node if
-  it is able to follow all the rules for a node sending this
-  message to that node, as described above.
+* The forwarder MUST only forward the peerswap to another node if:
+  - It is able to follow all the rules for a node sending this
+    message to that node, as described above.
+  - The `peerswap_init_hops` value in the received `peerswap_init`
+    is non-0.
 
 When forwarding, the following TLVs are modified.
 If it is not possible to modify a TLV to follow one of the rules
 indicated below, the node MUST NOT forward the peerswap.
 
+* `peerswap_init_hops`
+  - The outgoing value MUST be exactly 1 lower than the incoming
+    value.
 * `peerswap_init_timeouts`
   - The timelock of the in-sidepool HTLC MUST remain the same.
   - The timelock of the in-Lightning HTLC MUST be increased
     according to the `cltv_delta` of this node.
   - The difference between the in-sidepool and in-Lightning
     timelocks MUST be 2016 or more.
-* `peerswap_init_routehints`
-  - The forwarder MUST select any short channel ID, with any
-    value (existing or not, plausible or not).
-  - The forwarder appends the selected short channel ID and its
-    own node ID, as well as its typical `cltv_expiry_delta`, as a
-    new entry at the end of this array.
-  - The resulting array MUST be of length 5 or shorter.
 * `peerswap_init_channel_view_msat`
   - The forwarder MUST replace this entirely with its view of the
     channels between itself and the node it intends to forward the
     message to.
+* `peerswap_init_max_htlc_msat`
+  - If any channel for the node it intends to forward to, has an
+    `htlc_maximum_msat` setting that is lower than this, in the
+    direction coming from that node, then the forwarder MUST set
+    this value to the lowest `htlc_maximum_msat`.
+  - The value
+   `(peerswap_init_amount_sat * 1000) / peerswap_init_max_htlc_msat`,
+   rounded up, MUST be less than or equal to `peerswap_max_splits`
+   (40).
+* `peerswap_init_lcd_fallback`
+  - If this field exists in the incoming message, then this field
+    MUST also exist in the outgoing message.
+  * Otherwise, the forwarder is free to include or not include
+    this field in the outgoing message.
 
 All other TLVs MUST remain the same.
 
@@ -1050,15 +1113,8 @@ Accepting Peerswap
 ------------------
 
 If the receiver of the `peerswap_init` decides to accept the
-peerswap, it is now a peerswap acceptor.
-
-The acceptor first generates the hop from itself to the
-offerrer, by selecting any short channel ID (existing or not,
-plausible or not).
-It then provides its `cltv_expiry_delta` and the node from
-which it received the `peerswap_init`, and adds it to the
-routehint it received, then feeds that routehint back to
-the offerrer.
+peerswap, it is now a peerswap acceptor, and is the ultimate
+acceptor of the peerswap.
 
 The acceptor also generates its in-sidepool HTLC ephemeral and
 persistent keypairs, as described in [SIDEPOOL-06 HTLC Taproot
@@ -1088,14 +1144,18 @@ The acceptor then responds with a `peerswap_accept`:
         - 33 bytes: 33-byte DER encoding of the acceptor
           persistent public key for the in-sidepool HTLC.
       - Required.
-    * `peerswap_accept_routehints` (100206)
-      - Length: N * (33 + 8 + 2), 1 <= N <= 6
-      - Value: An array of structures:
-        - 8 bytes: short channel ID to the above hop.
-        - 2 bytes: unsigned big-endian 16-bit number, the
-          `cltv_expiry_delta` for this hop.
-        - 33 bytes: DER-encoded 33-byte node ID.
+    * `peerswap_accept_max_htlc_msat` (100206)
+      - Length: 8
+      - Value: an unsigned big-endian 64-bit number, in
+        millisatoshi; the maximum in-Lightning HTLC size of all
+        channels from the ultimate offerrer to the ultimate
+        acceptor.
       - Required.
+    * `peerswap_accept_lcd_fallback` (100298)
+      - Length: 0
+      - Optional.
+        If present, indicates that the least-common-denominator
+        fallback protocol will be used.
 
 `peerswap_accept_hash` is the hash indicated in the
 `peerswap_init` message.
@@ -1104,14 +1164,27 @@ The acceptor then responds with a `peerswap_accept`:
 public keys of the acceptor, as per [SIDEPOOL-06 HTLC Taproot
 Public Key][].
 
-`peerswap_accept_routehints` contains the route to be used from
-the ultimate offerrer (which will receive the corresponding
-in-Lightning payment) to the ultimate acceptor (which will send the
-in-Lightning payment).
-The ultimate acceptor MUST take the routehints it got from
-`peerswap_init` and append exactly one entry to it, containing the
-the short channel ID it chose, its `cltv_expiry_delta`, and its own
-node ID.
+`peerswap_accept_max_htlc_msat` is either equal to the received
+`peerswap_init_max_htlc_msat`, or any lower non-0 value.
+
+The sender of `peerswap_accept`:
+
+* MUST ensure that the value
+  `(peerswap_init_amount_sat * 1000) / peerswap_accept_max_htlc_msat`,
+  rounded up, is less than or equal to `peerswap_max_splits` (40).
+
+`peerswap_accept_lcd_fallback` indicates that the
+least-common-denominator fallback protocol will be used, if it
+is present.
+If `peerswap_init_lcd_fallback` was included in the `peerswap_init`,
+then the `peerswap_accept_lcd_fallback` MUST be included.
+Otherwise (i.e. `peerswap_init_lcd_fallback` was not included in
+`peerswap_init`), the sender MAY freely include or not include
+`peerswap_accept_lcd_fallback`, depending on whether it needs to
+use the fallback or not.
+
+> **Rationale** As noted, the least-common-denominator fallback
+> protocol exists to support LDK ultimate acceptors.
 
 The receiver of this message MUST perform the validations below:
 
@@ -1124,8 +1197,14 @@ log and ignore the message.
 If the above validation succeeds, the receiver of the message MUST
 perform the validations below:
 
-* The routehints includes the routehints it sent in the
-  `peerswap_init` as a prefix, and is at least one entry longer.
+* `peerswap_accept_min_htlc_msat` is less than or equal to the
+  `peerswap_init_min_htlc_msat` it sent.
+* The value
+  `(peerswap_init_amount_sat * 1000) / peerswap_accept_min_htlc_msat`,
+  rounded up, is less than or equal to `peerswap_max_splits` (40).
+* If it included `peerswap_init_lcd_fallback`, then
+  `peerswap_accept_lcd_fallback` is also included in the accept
+  message.
 
 If the above validation fails, the receiver of the message MUST
 abort the sidepool.
@@ -1140,143 +1219,8 @@ and it receives a `peerswap_accept`:
 * It MUST forward the message as-is to the peer it forwarded the
   peerswap from.
 
-> **TODO** Unfortunately, the incentives do not align perfectly.
->
-> Information on which nodes on the network currently lack
-> capacity towards them is not usually given by routing nodes.
->
-> Routing nodes are not incentivized to provide this information
-> to anyone.
-> Routing nodes would prefer to open unpublished channels to nodes
-> it knows have low inbound liquidity, so that they can
-> earn fees for payments to that node while having only a small
-> published channel to that node to downplay how much actual
-> capacity they are allocating towards it (because allocating more
-> liquidity towards it leaks the information that currently that
-> node is in need of inbound liquidity).
->
-> Forwardable peerswaps are a way to connect nodes with too much
-> available out-of-channel funds to nodes with insufficient
-> inbound liquidity, by asking intervening routing nodes to
-> forward the peerswap towards node with insufficient inbound
-> liquidity.
->
-> The reason a routing node might forward a forwardable
-> peerswap is that ideally, the only way for the ultimate offerrer
-> to communicate with the ultimate acceptor is via the intervening
-> peerswap forwarder, so that the peerswap forwarder does not
-> actually tell the ultimate offerrer who the ultimate acceptor
-> (who is lacking in inbound liquidity, which is the reason it
-> accepts instead of forwards) is.
-> The whole set of intervening forwarders "knows" who the node
-> lacking inbound liquidity is, but neither the ultimate acceptor
-> nor the ultimate offerrer can know each other.
->
-> The peerswap is a one-time action and not an ongoing relationship
-> between the ultimate offerrer and the ultimate acceptor.
-> The intervening forwarders are still needed by the ultimate
-> offerrer to be able to route payments to the ultimate acceptor,
-> meaning the intervening forwarders will, in the future, be able to
-> earn money in future payment forwardings.
-> This incentivizes them to connect those with excess out-of-channel
-> funds to those lacking in inbound liquidity, as the peerswap is
-> effectively a promise that they will get to earn money for the
-> possibility of forwarding to the ultimate aceptor.
->
-> If the ultimate acceptor and the ultimate offerrer can
-> identify each other, then they can collude to create a direct
-> channel that bypasses the intervening forwarders.
-> If this happens often enough, then the incentive for forwarders
-> to forward a peerswap disappears.
-> Non-forwarded peerswaps are significantly less valuable to the
-> Lightning Network.
->
-> Unfortunately, the `peerswap_accept_routehints` tells the
-> ultimate offerrer who the ultimate acceptor is in cleartext.
->
-> After receiving `peerswap_accept`, the ultimate offerrer can
-> stop this process and never continue with the peerswap, but
-> instead open a direct channel to the ultimate acceptor (which
-> it knows is lacking in inbound liquidity, because otherwise
-> the ultimate acceptor would have forwarded it to somebody
-> else instead of having to handle funds in the sidepool).
-> And the intervening forwarders have helped the ultimate
-> offerrer discover the ultimate acceptor, but will not be able
-> to expect future payments through them to reach the ultimate
-> acceptor and thus earn money, because the ultimate acceptor
-> will be able to forward directly to the ultimate acceptor
-> and cut the middlemen.
->
-> A retaliation could be that if the forwarder forwards the
-> `peerswap_accept`, it should force that the swap party
-> expansion phase includes the peerswap HTLC, or else abort
-> the sidepool as punishment on the ultimate offerrer (and
-> the punishment is a threat, as the ultimate offerrer would
-> not offer unless it had funds in the sidepool; aborting
-> the sidepool causes the funds to be locked up, thus
-> punishing the ultimate offerrer).
->
-> Unfortunately, the sidepool protocol describes a maximum
-> number of outputs; it is entirely possible that the sidepool
-> leader left out the peerswap HTLC simply because the limit
-> was reached.
-> This should not lead to a sidepool abort that locks up the
-> funds of participants, so the above retaliation is unsafe.
->
-> It would be better if the in-Lightning route is never
-> sent in plaintext to the ultimate offerrer.
-> Alternatives exist but suffer from not being implementable:
->
-> 1. We could build an HTLC onion starting from the ultimate
->    offerrer to the ultimate acceptor, and the ultimate
->    acceptor can just use that onion in an in-Lightning
->    `update_add_htlc`, without requiring an invoice signed
->    by the ultimate offerrer.
->    ***BUT***:
->    * We can build the onion by having the ultimate offerrer
->      show a NUMS point as the shared encryption key, and
->      then each intervening forwarder can use its node
->      private key plus the shared encrpytion key to encrypt
->      an onion layer for its hop.
->      This is doable in LDK since the node private key is
->      held outside the LDK library, but not in CLN, where
->      the private key is held in the `lightning_hsmd`
->      process.
->      CLN used to have a `getsharedsecret` RPC that would
->      have let a plugin provide the NUMS point and get
->      the encryption key for an onion layer it adds, but
->      that RPC has been removed in recent CLN.
-> 2. We could just have the forwarder keep track of
->    forwarding an inbound peerswap-related HTLC from its
->    local acceptor to an outbound HTLC to its local
->    offerrer.
->    ***BUT***:
->    * LDK requires that such forwards go through its
->      `get_intercept_scid` facility.
->      But this means that the local acceptor needs to
->      send a specific SCID to the forwarder.
->      And the forwarder can only specify the next hop,
->      but the onion is *always* the unwrapped onion from
->      the local acceptor, meaning that if the forwarder
->      got a specific SCID from **its** local offerrer,
->      (because the local offerrer is *another* LDK node)
->      then the onion that the local acceptor later
->      hands over MUST also contain that SCID; by
->      induction, this requires that the ultimate acceptor
->      gets the whole path to the ultimate offerrer, and
->      the ultimate acceptor can directly collude with the
->      ultimate offerrer to get a direct channel between
->      them, which bypasses the forwarders and means
->      they do not earn money in exchange for leaking
->      who the ultimate acceptor (who is lacking in
->      inbound liquidity) is.
->      This can be hidden by requiring onion encoding,
->      but *that* is the alternative above, which we
->      already demonstrated is impossible to implement
->      on recent CLN.
-
-Creating Sidepool HTLC And BOLT11 Invoice
------------------------------------------
+Creating Sidepool HTLC
+----------------------
 
 On receiving the `peerswap_accept`, the ultimate offerrer of the
 peerswap constructs the in-sidepool HTLC address as per
@@ -1316,290 +1260,335 @@ specified behavior if the in-sidepool HTLC output does not exist.
 
 After the offerrer has completed the expansion phase state
 validation and provided its signature for the expansion phase
-state, the offerrer generates the BOLT11 invoice.
+state, the offerrer proceeds to the in-Lightning HTLC
+propagation step.
 
-> **Rationale** A BOLT11 invoice is the least common denominator
-> that allows implementation of a forwardable peerswap acceptor
-> across all extant Lightning Network node implementations.
->
-> The routehint built by the `peerswap_init`-`peerswap_accept`
-> protocol is necessary as LDK HTLC interception requires that
-> an SCID be acquired from LDK, which will then be used to
-> trigger interception of the HTLC, in order to override the
-> normal fee requirements of LDK forwarding.
-> This information needs to be transferred from all forwarders
-> to the acceptor.
-> This is the reason why the short channel ID is allowed to be
-> any value, including impossible or invalid values.
->
-> Other Lightning Network node implementations allow for more
-> flexible interception, in order to implement 0-fee forwarding,
-> and thus may use any short channel ID, including a constant
-> invalid short channel ID like 0x0x0.
-> Such implementations can trigger interception and 0-fee
-> forwarding by inspecting the payment hash instead of the short
-> channel ID.
->
-> In theory, the route to the ultimate offerrer could have been
-> built as a BOLT12 blinded route instead.
-> However, blinded route support is not as widely-deployed at the
-> time of this routing as BOLT11 routehint support; in particular,
-> sending to a blinded route may not have easy-to-use interfaces
-> on all implementations, but paying to a BOLT11 invoices is
-> readily available on all implementations.
->
-> Alternately, the route to the ultimate offerrer could have
-> been built as a BOLT #4 onion.
-> The ultimate offerrer would construct a NUMS point, which
-> would be used as the `public_key` in BOLT #4.
-> Each forwarder would have access to its node private key
-> and would be able to generate the onion layer for its
-> hop, and would be able to include any additional information
-> and signalling it needed to route the forwarded peerswap.
-> However, node implementations like LND and CLN keep their
-> node private keys strongly away from access by external
-> daemons or plugins
-> (CLN used to have a `getsharedsecret` RPC, but it has been
-> recently removed), which would prevent sidepool
-> implementations as plugins or external daemons to those
-> node software.
+In-Lightning HTLC Propagation
+-----------------------------
 
-The BOLT11 invoice is sent by the offerrer to the acceptor via the
-`peerswap_invoice` message:
+In-Lightning HTLC propagation may be in "normal protocol" or
+"least-common-denominator fallback protocol".
 
-1.  `peerswap_invoice` (1004)
-    - Sent by the offerrer to the acceptor to indicate the BOLT11
-      invoice.
-2.  TLVs:
-    * `peerswap_invoice_id` (100400)
-      - Length: 16
-      - Value: The sidepool ID that the peerswap is done inside
-        of.
-      - Required.
-    * `peerswap_invoice_bolt11` (100402)
-      - Length: N
-      - Value: The ASCII encoding of the BOLT11 invoice.
-      - Required.
+In both protocols:
 
-The receiver of the `peerswap_invoice` message MUST perform the
-validation below:
+* The ultimate offerrer and the forwarders generate a path
+  from the ultimate acceptor to the ultimate offerrer.
+* The ultimate acceptor sends out one or more HTLCs (each
+  of amount no more than the final
+  `peerswap_accept_max_htlc_msat`) over Lightning channels,
+  summing to the agreed-upon in-sidepool amount.
+* Forwarders, if any, deliver the in-Lightning HTLCs to the
+  ultimate offerrer.
+* Once all the HTLCs arrive at the ultimate offerrer, the
+  offerrer claims them, and proceeds to the peerswap
+  resolution step, under the success path.
+* If HTLCs fail to reach the ultimate offerrer, once all the
+  sent HTLCs have returned back to the ultimate acceptor,
+  the ultimate acceptor proceeds to the peerswap resolution
+  step, under the fail path.
 
-* It recognizes the sidepool ID, and that the sender and the
-  receiver are both participants of the indicated sidepool.
-* It parses the invoice and extracts the `payment_hash` / `p`,
-  which must match the `peerswap_init_hash` of some peerswap it
-  accepted before, whether as a forwarder or as an ultimate
-  acceptor, from the sender.
+The difference in the two protocols is as follows:
 
-If any of the above checks fail, the receiver MUST ignore the
-message and SHOULD log it is an unusual event.
+* If the `peerswap_accept_lcd_fallback` TLV is included in the
+  `peerswap_accept` message, then the protocol used is the
+  "least-common-denominator fallback", otherwise the "normal
+  protocol" is used.
+* In the "least-common-denominator fallback" protocol, a route
+  is calculated in cleartext, and the ultimate acceptor sends
+  out payments to that route.
+* Otherwise, in the "normal" protocol, the route is implied
+  in a payment onion from the ultimate offerrer to the
+  ultimate acceptor.
 
-Then, the forwarder or acceptor MUST validate the BOLT11 invoice
-in detail as specified in the next section.
+### Agreed-upon Amount And Multipart
 
-### BOLT11 Invoice Generation And Validation
-
-The offerrer, any forwarders, and the acceptor, MUST determine
-the following:
-
-* The "post-tax amount" of the in-sidepool HTLC output, as per
-  [SIDEPOOL-02 Onchain Fee Charge Distribution][], for the
-  expansion phase state.
+The amount to be sent over Lightning is the "*post-tax amount*"
+of the in-sidepool HTLC output, as described in [SIDEPOOL-02
+Onchain Fee Charge Distribution][].
 
 [SIDEPOOL-02 Onchain Fee Charge Distribution]: ./02-transactions.md#onchain-fee-charge-distribution
 
-The offerrer MUST set the following bits in the BOLT11 feature
-bits array `9`:
+While for a single peerswap operation, only one in-sidepool
+HTLC is necessary, in-Lightning HTLCs are limited in size up to
+the `htlc_maximum_msat` of the channel.
 
-* Bit 8: require `var_onion_optin`.
-* Bit 14: require `payment_secret`.
+> **Rationel** In particular, limiting `htlc_maximum_msat` limits
+> the risk exposure of a forwarding node to mempool replacement
+> cycling attacks.
+> Sidepools are not directly affected by mempool replacement due
+> to always having the "first" HTLC (i.e. first created, highest
+> timeout, and last resolved) in a series of HTLCs terminating in
+> Lightning Network.
+> However, the corresponding HTLCs in the Lightning network *are*
+> potentially vulnerable to replacement cycling, so supporting
+> the `htlc_maximum_msat` indirectly reduces the overall risk of
+> using sidepools to balance Lightning Network channels.
 
-The offerrer MUST NOT set any other bits, even if it would
-normally set them for "normal" invoices.
+Thus, the amount to be sent over Lightning may need to be split
+over multiple parts, similar to multipart payments.
 
-The offerrer MUST set the human-readable part as per
-[BOLT #11 Human-Readable Part][]:
-The forwarders and the acceptor MUST check these as well.
+The ultimate offerrer first constructs multiple parts for the
+in-Lightning HTLC propagation:
 
-* The `prefix` is correct for the network the offerrer and the
-  sidepool is operating in.
-* The `amount` is the **"post-tax amount"** of the in-sidepool
-  HTLC.
-  * This will usually be less than the `peerswap_init_amount_sat`,
-    but may be larger if the pool leader selected the in-sidepool
-    HTLC as the onchain fee tax overpayment beneficiary.
+* The sum of the parts MUST exactly equal the agreed-upon
+  in-Lightning amount, equal to the "*post-tax amount*" of the
+  in-sidepool HTLC output.
+* Each part MUST be less than or equal to
+  `peerswap_accept_max_htlc_msat`.
+* The total number of parts must be less than or equal to
+  `peerswap_max_splits` (40).
 
-[BOLT #11 Human-Readable Part]: https://github.com/lightning/bolts/blob/master/11-payment-encoding.md#human-readable-part
+### Normal Protocol
 
-The offerrer then sets the data part as per [BOLT #11 Data Part][].
-The forwarders and the acceptor also validate these as well.
-All tagged fields MUST be indicated at most once, and not repeated.
+The ultimate offerrer that initiated the peerswap, on receiving a
+`peerswap_accept` message ***WITHOUT*** the
+`peerswap_accept_lcd_fallback` TLV, then starts the normal
+in-Lightning HTLC propagation protocol by sending one or more
+`peerswap_onion` messages, one for each part:
 
-* The `timestamp` MUST be set to offerrer view of the current
-  time.
-  The acceptor MUST accept a `timestamp` of up to one hour before
-  to one hour after its view of the current time, while any
-  forwarders MUST ignore the timestamp.
-* The `payment_hash` / `p` MUST be set to the value indicated in
-  `peerswap_init_hash`.
-* The `payment_secret` / `s` MUST be set.
-  The offerrer MAY set it to any value, and SHOULD set it to a
-  256-bit number indistinguishable from random.
-* The `description` / `d` MUST be set to the ASCII encoding of
-  the exact string `"forwardable-peerswap"` *without* the double
-  quotation marks and *without* a trailing NUL character.
-* The `metadata` / `m` MUST NOT be set.
-* The `destination` / `n` MUST be set to the offerrer indicated
-  in `peerswap_init_offerrer`.
-* The `description_hash` / `h` MUST NOT be set.
-* The `expiry` / `x` MUST be set to 24 * 60 * 60 = 86400 (1 day).
-* The `min_final_cltv_expiry_delta` / `c` MUST be set to the
-  `peerswap_init_cltv_final`.
-* The `fallback_address` / `f` MUST NOT be set.
-* The `routehint` / `r` MUST be set, and contains the routehints
-  indicated in the `peerswap_accept_routehints`.
-  The `fee_base_msat` and `fee_proportional_millionths` fields of
-  each entry MUST be set to 0.
-* The `featurebits` / `9` MUST be set, to the feature bits
-  specified above.
-* Tagged fields other than the above MUST NOT be set.
-
-[BOLT #11 Data Part]: https://github.com/lightning/bolts/blob/master/11-payment-encoding.md#data-part
-
-The invoice MUST be signed.
-
-If any of the above validations fail for a forwarder or for the
-acceptor, the forwarder or acceptor MUST abort the sidepool.
-
-Any forwarders MUST forward the `peerswap_invoice` message
-verbatim.
-
-The ultimate acceptor performs the following additional
-validation:
-
-* The current blockheight, plus the `min_final_cltv_expiry_delta`
-  / `c`, plus all of the `cltv_expiry_delta`s in the `routehints`
-  / `r`, must be less than or equal to the in-sidepool timeout
-  indicated in `peerswap_init_timeouts`.
-
-If the above validation fails, the acceptor MUST refund the
-peerswap, as per [SIDEPOOL-10 Refunding Peerswap][] instead of
-attempting to pay the invoice.
-
-[SIDEPOOL-10 Refunding Peerswap]: #refunding-peerswap
-
-Performing Lightning-side Swap
-------------------------------
-
-The ultimate acceptor:
-
-* MUST attempt to pay the given BOLT11 invoice.
-* SHOULD use the path given in the BOLT11 invoice routehint.
-  * MAY use an alternate path to the same destination.
-  * MUST use the indicated SCIDs in the routehint, if using
-    information in the routehint path.
-* SHOULD use 0 fees for each hop in the BOLT11 invoice routehint.
-  * MAY pay more than 0 fees.
-  * MUST pay the correct fee if using nodes and SCIDs not
-    indicated in the routehint.
-* SHOULD make a single payment attempt.
-  * MAY make multiple payment attempts.
-* SHOULD give up if the single payment attempt fails.
-
-> **Rationale** The main reason for using a BOLT11 invoice is that
-> it is the "least common denominator".
-> Any practical Lightning Network node implementation is capable
-> of paying BOLT11 invoices.
->
-> However, most node implementations have a "pay BOLT11 invoice"
-> implementation that:
->
-> * Tries the routehint first and follows the routehint correctly
->   (including 0 fee indications), but if that fails, re-attempts
->   the payment with a shorter routehint or without the routehint.
-> * Makes multiple attempts if it fails.
->
-> Ideally, sidepool implementations would use some low-level or
-> alternate payment interface of the node implementation that
-> allows sending of an arbitrary HTLC with arbitrary onion.
-> For example, CLN exposes a `sendonion` RPC method that allows a
-> sidepool plugin to implement this step by directly encoding the
-> routehint, and makes exactly one attempt to pay.
-
-
-(TODO)
-
-### Refunding Peerswap
-
-The ultimate acceptor refunds a peerswap by sending its
-ephemeral private key for the in-sidepool HTLC in a
-`peerswap_refund` message.
-
-1.  `peerswap_refund` (1096)
-    - Sent by an acceptor to indicate that the in-sidepool
-      HTLC will be refunded to the ultimate offerrer of the
-      peerswap.
+1.  `peerswap_onion` (1004)
+    - Sent from a peerswap offerrer to a peerswap acceptor.
 2.  TLVs:
-    * `peerswap_refund_id` (109600)
+    * `peerswap_onion_id` (100400)
       - Length: 16
-      - Value: The sidepool ID that the peerswap is done inside
-        of.
+      - Value: The sidepool identifier of the pool on which the
+        peerswap offerrer wants to offer funds in exchange for
+        Lightning funds.
       - Required.
-    * `peerswap_refund_hash` (109602)
+    * `peerswap_onion_hash` (100402)
       - Length: 32
-      - Value: The hash of the peerswap.
+      - Value: The 256-bit hash, the hashlock of the HTLCs in the
+        peerswap.
       - Required.
-    * `peerswap_refund_key` (109604)
-      - Length: 65
-      - Value: The structure:
-        - 32 bytes: Encrypted acceptor ephemeral private key.
-        - 33 bytes: Encryption public key.
+    * `peerswap_onion_amount_msat` (100404)
+      - Length: 8
+      - Value: An unsigned big-endian 64-bit number, denoting the
+        number of millisatoshis amount for this payment part.
+      - Required.
+    * `peerswap_onion_point` (100406)
+      - Length: 33
+      - Value: A 33-byte DER encoding of the `public_key` that
+        the offerrer will use to decode the outermost onion
+        layer, as described in [BOLT #4 Packet Structure][].
+      - Required.
+    * `peerswap_onion_packet` (100408)
+      - Length: 1300
+      - Value: The 1300-byte `hop_payloads` ciphertext, as
+        described in [BOLT #4 Packet Structure][].
+      - Required.
+    * `peerswap_onion_hmac` (100410)
+      - Length: 32
+      - Value: The 32-byte `hmac` that the offerrer will use
+        to validate the payment onion, as described in
+        [BOLT #4 Packet Structure][].
       - Required.
 
-The ultimate acceptor MUST send `peerswap_refund` if both
-conditions below are true, and MUST NOT send it otherwise:
+[BOLT #4 Packet Structure]: https://github.com/lightning/bolts/blob/master/04-onion-routing.md#packet-structure
 
-* It has given up on paying the BOLT11 invoice.
-  * As noted above, the acceptor SHOULD give up after a single
-    attempt, but MAY make multiple attempts.
-* AND, all in-Lightning HTLCs with the peerswap hash have been
-  irrevocably committed as removed from the channel(s) they
-  were on.
+`peerswap_onion_hash` is the hash indicated in the `peerswap_init`
+and `peerswap_accept` messages.
 
-`peerswap_refund_key` is the ultimate acceptor ephemeral
-private key, encrypted to the ultimate offerrer, together
-with a public encryption key for Diffie-Helman key exchange,
-as described in [SIDEPOOL-06 Secure Private Key Handover][].
+`peerswap_onion_amount_msat` is the amount encoded to be received
+for this part of the in-Lightning HTLCs.
 
-Receivers of this message:
+`peerswap_onion_point`, `peerswap_onion_packet`, and
+`peerswap_onion_hmac` are the corresponding fields for the
+`onion_packet` structure described in [BOLT #4 Packet
+Structure][].
 
-* MUST check that the sidepool ID and hash corresponds to some
-  previous `peerswap_invoice` it sent to the sender of the message
-  for the current swap party.
+The receiver of `peerswap_onion` MUST perform the validations
+below:
 
-If the above validation fails, the receiver SHOULD log the message
-and otherwise ignore it.
+* It previously sent `peerswap_accept` to the sender, and the
+  sidepool ID and hash matches the one in `peerswap_accept`.
 
-Otherwise, if the receiver was a forwarder, the forwarder:
+If any of the above validations fail, the receiver of the
+`peerswap_onion` message SHOULD log and ignore this message.
 
-* MUST send the same message verbatim to its incoming offerrer.
+If all of the above validations succeed, the receiver of
+`peerswap_onion` MUST perform the additional validations
+below:
 
-If the receiver was the ultimate offerrer, the offerrer MUST:
+* `peerswap_onion_amount_msat` is less than or equal to the
+  previous `peerswap_accept_max_htlc_msat`.
+* If there were previous `peerswap_onion` messages, the running
+  sum of all `peerswap_onion_amount_msat`, including for the
+  latest message, is less than or equal to the agreed-upon
+  in-Lightning amount.
+  * As defined above, this is equal to the "*post-tax amount*"
+    of the in-sidepool HTLC output.
 
-* Decrypt the ultimate acceptor ephemeral private key, as
-  described in [SIDEPOOL-06 Secure Private Key Handover][].
-* Validate that the acceptor ephemeral private key corresponds to
-  the given acceptor ephemeral public key in
-  `peerswap_accept_pubkeys`.
-  * If this validation fails, MUST abort the sidepool.
-* Calculate the aggregate HTLC private key.
+If any of the above validations fails, the receiver of
+`peerswap_onion` MUST abort the sidepool.
 
-The offerrer SHOULD store the aggregate HTLC private key locally
-in non-swappable memory, and SHOULD NOT store it in persistent
-storage.
+#### Ultimate Offerrer In-Lightning HTLC Propagation Normal Protocol
 
-Once the offerrer has computed the aggregate HTLC private key,
-it MAY continue with the Contraction Phase of the swap party,
-If so, it MUST claim the in-sidepool HTLC using the aggregate
-HTLC private key during the Contraction Phase.
+The ultimate offerrer constructs one or more onion packets for
+each part of the in-Lightning HTLCs.
+
+The ultimate offerrer of the peerswap constructs the innermost
+onion layer of the onion packet, as described in [BOLT #4
+`payload` format][]:
+
+* It SHOULD set `amt_to_forward` to the amount of this part,
+  equal to `peerswap_onion_amount_msat`.
+* It SHOULD set `total_msat` to the agreed-upon in-Lightning
+  amount, equal to the "*post-tax amount*" of the in-sidepool
+  HTLC output.
+* It MAY include arbitrary `payment_secret` and/or
+  `payment_metadata`.
+* It MAY include any additional arbitrary TLVs.
+
+[BOLT #4 `payload` format]: https://github.com/lightning/bolts/blob/master/04-onion-routing.md#payload-format
+
+> **Rationale** The only true requirement is that the ultimate
+> offerrer is able to receive the HTLCs as necessary.
+>
+> For instance, under LDK, a sidepool implementation needs to
+> acquire a `payment_secret` from LDK, in order to hook into
+> receiving a payment.
+
+Once it has constructed the innermost layer, it can then
+select a keypair for the `public_key` to be used, and then
+derive the shared secret key for the innermost layer with its
+own node ID.
+
+[BOLT #4 Shared Secret]: https://github.com/lightning/bolts/blob/master/04-onion-routing.md#shared-secret
+
+> **Non-normative** The ultimate offerrer can use either of the
+> following to construct `public_key`:
+>
+> * Pick a random SECP256K1 scalar, then derive `public_key` by
+>   multiplying the scalar with standard `G`, then ECDH the scalar
+>   and its own public node ID to derive the shared secret key to
+>   encrypt the innermost onion layer.
+> * Pick a random SECP256K1 point as the `public_key`, then ECDH
+>   the `public_key` with the private key of its node ID to derive
+>   the shared secret key to encrypt the innermost onion layer.
+>
+> Either method works, though obviously the one that does not
+> require access to the private key of the node ID would be safer
+> to implement.
+
+When HTLCs arrive at the ultimate offerrer corresponding to the
+`peerswap_onion` messages it sent out, the ultimate offerrer:
+
+* If the total HTLCs is less than the agreed-upon amount for the
+  in-Lightning HTLCs, MUST hold the HTLCs for up to 60 seconds.
+  * On timeout, MUST error the HTLC using any payment failure
+    code.
+* Otherwise, SHOULD fulfill all HTLCs and proceed with peerswap
+  resolution, under the success path.
+  * MAY fail all HTLCs using any payment failure code.
+
+> **Rationale** The exact reason for failure is immaterial; if the
+> in-Lightning HTLC fails, then the peerswap simply fails as well.
+>
+> The local acceptor at the ultimate offerrer may or may not be
+> the ultimate acceptor, i.e. the local acceptor from the ultimate
+> offerrer may be a forwarder.
+> While the forwarder can decode the failure onion, and then
+> re-encode it, it is simpler for a forwarder implementation to
+> always generate some fixed one-layer failure onion.
+
+#### Forwarder In-Lightning HTLC Propagation Normal Protocol
+
+A forwarder that receives `peerswap_onion` from its local offerrer
+then needs to construct its own onion, and forward the
+`peerswap_onion` to its local acceptor.
+
+To do so, a forwarder:
+
+* Stores the details of the `peerswap_onion` it receives in
+  persistent storage, as well as the corresponding blockheight
+  for the in-Lightning HTLC from its previously received
+  `peerswap_init_timeouts`.
+* Generates a new onion with a single onion layer, as described
+  above.
+* Associates the details of the received `peerswap_onion` with
+  the to-be-sent `peerswap_onion`, saving this association in
+  persistent storage.
+* Sends the `peerswap_onion` to its local acceptor, using the
+  onion details it generated.
+
+When an HTLC arrives at the forwarder corresponding to the
+`peerswap_onion` it sent out, the forwarder:
+
+* Sends out an HTLC to its local offerrer, containing the saved
+  details of the `peerswap_onion` it received.
+  - The `cltv_expiry` for the outgoing HTLC must match the
+    corresponding timelock for the in-Lightning HTLC in
+    `peerswap_init_timeouts`.
+* Waits for *that* HTLC to be either fulfilled or failed.
+  - On fulfilment, also fulfills the incoming HTLC.
+  - On failure, also fails the incoming HTLC using any error code.
+* If the forwarder node is restarted before the outgoing HTLC was
+  fulfilled or failed, MUST resume waiting for it to fulfill or
+  fail, *without* fulfilling or failing the incoming HTLC, i.e. the
+  incoming HTLC MUST be held until the outgoing HTLC is resolved,
+  even across node restarts.
+
+> **Non-normative** This is safe to implement in CLN by use of its
+> `htlc_accepted` hook.
+> The CLN `htlc_accepted` hook can be used to handle the HTLC that
+> arrives at the forwarder.
+>
+> An important part of the CLN `htlc_accepted` hook is that on
+> node restart, `htlc_accepted` hooks of previously-held incoming
+> HTLCs are replayed.
+> This allows the incoming HTLC to be held once again on a node
+> restart.
+>
+> In LDK as of v0.119, there is no corresponding way to ensure
+> that some specific incoming HTLC will be held on a node restart.
+> In LDK, on a restart, any incoming HTLC that is not forwarded by
+> LDK itself, or whose preimage LDK already knows from the
+> corresponding `payment_secret`, will be failed.
+> In particular, `create_inbound_payment_for_hash` will be failed
+> on restart if the LDK-user code has not called `claim_funds`.
+> This is unsafe when external code handles the forwarding.
+>
+> In theory, under LDK, the forwarder could have used
+> `get_intercept_scid` and then embedded that in the onion it
+> sends to its local acceptor.
+> Unfortunately, this requires that the onion from the local
+> offerrer be embedded as an inner onion (since LDK intercept
+> SCIDs can only forward the inner onion), but this is not
+> possible to encode due to the way the ephemeral `public_key` is
+> changed at each hop.
+>
+> Because of this, an LDK implementation of sidepools MUST
+> always add `peerswap_init_lcd_fallback` if it is a forwarder,
+> and always add `peerswap_accept_lcd_fallback` if it is the
+> ultimate acceptor.
+
+#### Ultimate Acceptor In-Lightning HTLC Propagation Normal Protocol
+
+When the ultimate acceptor receives `peerswap_onion`, it waits
+until the running total of the `peerswap_onion_amount_msat`s
+exactly equals the agreed-upon in-Lightning HTLC amount, equal to
+the "*post-tax amount*" of the in-sidepool HTLC.
+
+If the running total of the `peerswap_onion_amount_msat`s exceeds
+the agreed-upon in-Lightning HTLC amount, the ultimate acceptor
+MUST abort the sidepool.
+
+Once the total of the `peerswap_onion_amount_msat`s is exactly
+equal to the agreed-upon in-Lightning HTLC amount, the ultimate
+acceptor SHOULD send out HTLCs to its local offerrer, one for
+each `peerswap_onion` message, with the corresponding onion
+details.
+
+If *all* HTLCs it sent out for this peerswap have failed, the
+ultimate acceptor enters peerswap resolution step, under the fail
+path.
+
+If an outgoing HTLC fails, the ultimate acceptor MAY re-attempt
+it if no more than 90 seconds have passed since it sent the first
+HTLC.
+
+### Least-Common-Denominator Fallback Protocol
+
+Peerswap Resolution
+-------------------
 
