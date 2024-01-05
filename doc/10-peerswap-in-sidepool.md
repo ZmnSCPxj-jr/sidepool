@@ -1557,6 +1557,12 @@ When an HTLC arrives at the forwarder corresponding to the
 > possible to encode due to the way the ephemeral `public_key` is
 > changed at each hop.
 >
+> A final nail in the coffin of this protocol being implementable
+> on LDK is that LDK does not support sending out a payment with a
+> payment onion that is computed outside of LDK.
+> This prevents not only forwarders from sending out the data in a
+> `peerswap_onion` message, but also ultimate acceptors.
+>
 > Because of this, an LDK implementation of sidepools MUST
 > always add `peerswap_init_lcd_fallback` if it is a forwarder,
 > and always add `peerswap_accept_lcd_fallback` if it is the
