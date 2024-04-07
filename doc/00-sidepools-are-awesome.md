@@ -750,7 +750,7 @@ forwarded *anywhere*, the only requirement is it has to reach
 in-Lightning funds.
 
 Now, why would *you* initiate a peerswap (that you are not
-forwarding from somewhere else) in the firrst place?
+forwarding from somewhere else) in the first place?
 This is because you need to have some additional liquidity towards
 that peer.
 
