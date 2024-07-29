@@ -713,7 +713,7 @@ However, you can do two things to improve peerswaps and create
 "*forwardable peerswaps*":
 
 * Restrict the swap protocol to only allowing paying onchain to
-  get funds in-Lightning, and disallow th reverse.
+  get funds in-Lightning, and disallow the reverse.
 * Apply the virtualization argument:
   * You can offer to pay onchain to get in-Lightning funds to a
     direct peer (hence "*peer*swap").
