@@ -296,7 +296,7 @@ The Naivety Of Local Views
 --------------------------
 
 "But I have a ton of inbound liquidity on my channels!
-Why are my customers still sufferring from payment failures?
+Why are my customers still suffering from payment failures?
 Surely you are wrong, Zman!"
 
 Suppose you, dear merchant `A`, can see that your channels look
@@ -368,7 +368,7 @@ lock their funds is an opportunity cost (they could have instead
 ran a JoinMarket maker during the time they locked the funds to a
 channel), but just like the cost of channel opening, you can bet
 that the opportunity cost of locking the funds to you has been
-shifted to you.)
+shifted to you as part of the cost of opening the channel.)
 
 Worse, there is also an incentive for runners of inbound liquidity
 marketplaces to cover up the above, because obviously the sellers
