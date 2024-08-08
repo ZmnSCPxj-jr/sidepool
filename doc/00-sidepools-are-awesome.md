@@ -509,7 +509,7 @@ This is why [CLBOSS uses swap services][].
 Further, swap providers are in the business of, well, *providing
 swaps*.
 They have a strong incentive to ensure that *they* have good
-inbound liquidity frome elsewhere, because they get paid if and
+inbound liquidity from elsewhere, because they get paid if and
 only if the Lightning side of the swap reaches them.
 If they do not have good inbound liquidity themselves, then they
 fail to get paid for swap services and have no business model.
