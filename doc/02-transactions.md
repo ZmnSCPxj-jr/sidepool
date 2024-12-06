@@ -26,6 +26,14 @@ leader to occur once per day, and start between 0000h to 0030h
 UTC; both updates of a swap party occur within 20 minutes of each
 other.
 
+(The *pool leader* is the Lightning Network node that
+initiated the creation of a sidepool instance, and is
+the one that emulates broadcast messages and handles
+requests.
+The *pool followers* are other Lightning Network nodes
+that were invited by the pool leader to the sidepool
+instance, and accepted the invitation.)
+
 While operating, version 1 pools have the following transaction
 outputs and transactions:
 
@@ -38,27 +46,36 @@ outputs and transactions:
   * The funding transaction output has an aggregate key of all
     participants.
 * A *kickoff transaction*, which spends the above funding
-  transaction output, and has a single output, an aggregate key
-  of all participants.
-  * The kickoff transaction has `nSequence = 0`, which indicates
-    RBF is enabled and a relative lock time of 0 blocks.
+  transaction output, and two outputs, (1) an aggregate key
+  of all participants with the same amount as its sole input,
+  and (2) a P2A output of 240 satoshis (which is always
+  the last output).
+  * The kickoff transaction has `nVersion=3`, which indicates
+    Topologically Restricted Until Confirmation, and implies
+    replacability.
 * Multiple *update transactions*.
   * They all have a single input:
-    * The first update transaction spends from the output of the
-      kickoff transaction.
+    * The First update transaction spends from the aggregate-key
+      output of the kickoff transaction.
     * All but the first update transaction spends from the
-      output of the previous update transaction.
+      aggregate-key output of the previous update transaction.
   * For outputs:
-    * All but the last update transaction has a single output,
-      an aggregate key of all participants.
+    * All but the last update transaction has a two outputs,
+      (1) an aggregate key of all participants and (2) a P2A
+      output of 240 satoshis (which is always the last
+      output).
     * The last update transaction has as outputs all of the
-      current set of transaction outputs inside the pool.
+      current set of transaction outputs inside the pool,
+      plus a P2A output of 240 satoshis (which is
+      always the last output).
   * Update transactions have an `nSequence` encoding a relative
     lock time, from 0 blocks, to
     `blocks_per_step * (steps_per_stage - 1)`.
-    Only multiples of `blocks_per_step` are allowed.
-    * As the `nSequence` would be less than `0xFFFFFFFE`, it also
-      indicates RBF is enabled.
+    Only multiples of `blocks_per_step` are allowed for their
+    `nSequence`.
+  * Update transactions have `nVersion=3`, which indicates
+    Topologically Restricted Until Confirmation, and implies
+    replacability.
   * The number of update transactions is `number_of_stages`.
 
 For version 1 pools:
@@ -216,12 +233,45 @@ Sidepool version 1 pools must have a number of participants:
 > thus sidepools must have at least 3 participants for minimum
 > utility on top of Lightning Nework channels.
 
-Swap Party Phases
------------------
+Swap Parties
+------------
 
-Swap parties are sessions during which pool participants may
-offer an HTLC to other participants, then fulfill, fail, or
-retain the HTLC for the next swap party.
+Swap parties are sessions during which pool participants
+may offer an HTLC to other participants, then fulfill,
+fail, or retain the HTLC for the next swap party.
+
+There are two kinds of swap parties:
+
+* *Regular swap parties*
+  - These are scheduled by the pool leader to occur
+    once a day.
+  - The pool leader may miss a regular swap party for
+    the day.
+    - This can occur if it tries to raise all followers
+      by connecting to them and trying to send a `ping`
+      `pong`, but fails to raise one or more followers.
+    - This can also occur if the pool leader is offline
+      during the regular period.
+  - When a sidepool is initially created, the pool
+    leader indicates a time-of-day at which the
+    regular swap party is expected to be performed.
+    This time-of-day is always relative to the UTC
+    timezone.
+    Pool members check that regular swap parties can
+    only be performed within one hour of this
+    promised time.
+* *Irregular swap parties*
+  - Any pool member can initiate a swap party at any
+    time.
+  - The pool member (whether leader or follower) must
+    have unilaterally-controlled funds in the sidepool,
+    and pays a nominal fee from those funds, in order
+    to authorize the swap party.
+
+Every swap party is composed of two phases, and an
+optional third phase.
+
+### Swap Party Phases
 
 HTLCs, to be resolved, need to have two updates:
 
@@ -232,8 +282,8 @@ Thus, as mentioned, swap parties have two updates, or "*swap
 party phases*":
 
 * *Expansion Phase* - participants specify that an existing
-  transaction output in the state is split into one or more new
-  transaction outputs.
+  transaction output in the current output state is split into
+  one or more new transaction outputs.
   * For example, a participant offers an HTLC to another
     participant by splitting its in-pool funds between a "change"
     output containing its remaining funds, and a new output that
@@ -333,204 +383,128 @@ update counter back to 1 (i.e. a Reseat Phase becomes mandatory).
 Onchain Feerates
 ----------------
 
-All transactions must be marked with the RBF-enabled flag.
-Relative lock times encoded in `nSequence` automatically enable
-the RBF flag.
-This also means that a relative lock time of 0 must still be
-encoded in `nSequence` in order to force the RBF-enabled flag.
+All transactions (the kickoff and each update transaction)
+must have `nVersion=3`, meaning they are Topologically Restricted
+Until Confirmation.
+This also implies that the transactions are replacable and allowed
+to have 0 fee.
+
+All transactions must have a P2A output as their last output.
+All transactions, except the last update transaction, must
+pay 0 fee (i.e. the sum of all output amounts is equal to
+the sume of all input amounts).
+The last update transaction may or may not pay 0 fee,
+as described in a later section.
+
+Every P2A output must have a 240 sat amount, and is always the
+last output.
+On unilateral closure, at least one participant has to use an
+exogenous UTXO to pay for the confirmation of transactions,
+hooking into the P2A output to pay fees for it.
 
 The feerate of the funding transaction is negotiated by the pool
 participants during the creation of the pool, or during a
 Reseat Phase where a new funding transaction for the pool is
 created from the current funding transaction output.
 
-The feerate of the kickoff transaction is fixed to the
-`minimum_fee_rate + minimum_fee_rate_step`.
+### Who Pays For What?
 
-The feerate of update transactions, except the Last update
-transaction, is a steady increase in feerate.
-The lowest (`00`) has `minimum_fee_rate`, and each sucessive
-update is higher by `minimum_fee_rate_step`.
+These things must be paid for onchain by the sidepool
+mechanism:
 
-    minimum_fee_rate = 280 satoshis per 1000 weight units
-    minimum_fee_rate_step = 253 satoshis per 1000 weight units
+* The P2A outputs
+* The impact of irregular swap parties
+* The impact of regular swap parties
 
-> **Rationale** The `minimum_fee_rate_step` is from [BIP-125
-> Implementation Details][] Rule 4, which indicates that the
-> feerate must increase by at least the minimum relay fee.
-> The default Bitcoin Core relay fee is 1 satoshi per vbyte,
-> equal to 253 satoshis per 1000 weight units.
->
-> The `minimum_fee_rate` is slightly higher than the minimum
-> relay fee; generally, a 1.1 satoshi per vbyte is often
-> enough to get a transaction confirmed onchain, and 280
-> satoshis per 1000 weight units is slightly higher than that.
+#### Who Pays For P2A Outputs?
 
-[BIP-125 Implementation Details]: https://github.com/bitcoin/bips/blob/master/bip-0125.mediawiki
+As each P2A output is required to be 240 satoshis,
+each transaction has its non-P2A outputs sum up to
+240 less than what its input amount is.
+There are `1 + number_of_stages` transactions, thus,
+the total amount from the funding transaction output
+to all P2A outputs is `(1 + number_of_stages) * 240`
+satoshis.
 
-In a table, the non-Last update transactions thus have the
-onchain feerates below:
+The total P2A output amount is a contribution of the
+pool leader, and is the reason why the pool leader
+must always own an output in the current output state
+of the pool.
 
-| Bit Values | Onchain Feerate (satoshis per 1000 WU) |
-|------------|----------------------------------------|
-| 00         | 280                                    |
-| 01         | 533 (= 280 + 253)                      |
-| 10         | 786 (= 280 + 253 + 253)                |
-| 11         | 1039 (= 280 + 253 + 253 + 253)         |
+Whenever the sidepool state updates (i.e. in all of
+Expansion, Contraction, and Reseat phases), the pool
+leader shows a proof that one of the outputs in the
+current output state is owned by itself.
+The amount `(1 + number_of_stages) * 240` is deducted
+from one instance of that output in the output state
+bag, before it is written into the Last update
+transaction.
 
-> **Rationale** Increasing the feerates as the bit values
-> increase implies that in a default configuration Bitcoin Core
-> mempool, the update transaction stage with the later (higher)
-> bit value will replace those with the earlier (lower) bit
-> value.
-> This reduces, though does not eliminate, the probability of
-> older, defunct states to be confirmed; the probability is
-> very good that a later state will replace an earlier state,
-> and an earlier state will be unable to replace a later state.
->
-> An alternative is to use anchor outputs so that all offchain
-> transactions are at the minimum relay feerate, and then
-> participants must then "bring their own fees" by using CPFP-RBF
-> from the anchor outputs.
-> However, existing implemented rules for anchor outputs require
-> that each participant has its own dedicated anchor output,
-> which increases the transaction size drastically if there are
-> even a dozen pool participants, further multiplied by the number
-> of update transaction stages.
-> As CPFP-RBF still relies on RBF anyway, we instead rely
-> directly on RBF to avoid the drastic transaction size increase.
->
-> Onchain feerates are described in this section in order to
-> require that all sidepool implementations follow the same
-> policy regarding onchain feerates, as experience with the
-> Lightning Network has shown that onchain feerate disagreements
-> are a frequent cause of unilateral channel closures.
-> In fact, onchain feerate disagreements often arise due to
-> sudden changes in onchain feerate (mempools are only weakly
-> synchronized), and once channels start dropping due to onchain
-> fee disagreement, the onchain feerate estimates start moving
-> even faster, exacerbating the problem and causing even more
-> channels to close.
->
-> Even in times where the mempool is so congested that the low
-> feerates start being dropped from the mempool, if the mempool
-> *does* start to decongest, the later transaction versions are
-> more likely to be picked up first due to having higher feerates
-> than earlier versions, i.e. the later transactions will be
-> returned to the mempool faster.
+Thus, P2A output amounts are paid for by the pool
+leader, and that amount is effectively a contribution
+by the pool leader to allow feerate decisions to be
+deferred to unilateral exit time.
 
-> **Non-normative** As noted, this scheme reduces, but ***does
-> not eliminate***, the probability that a previous state is
-> confirmed.
-> If a unilateral close is triggered and the mempool is
-> congested such that the latest state is unable to be
-> confirmed within 72 blocks of the previous transaction stage
-> getting confirmed, actual implementations MUST sound some
-> alarm at the operator, informing them of the stuck transaction
-> and imploring them to use out-of-band communications with as
-> many miners as possible to pay to accelerate the stuck
-> transaction.
-> A similar alarm should be triggered, if a reseating transaction
-> is unable to confirm within 72 blocks of being fully signed.
+#### Who Pays for Irregular Swap Parties?
 
-For the Last update transaction, if the bit value is 0 (i.e.
-even) then the feerate is exactly `minimum_fee_rate`.
+Any pool member --- whether pool leader or pool
+follower --- may request an irregular swap party at
+any time.
+For example, if a pool member would have failed a
+forwarding request, but it has funds in a sidepool
+which it can swap to the failing channel, it can
+request an irregular swap party, then successfully
+forward the payment.
 
-However, if the bit value is 1, then the fee (*not the fee
-**rate**!*) must be equal to the previous fee at bit value = 0,
-plus the current size of the Last update transaction times
-the `minimum_fee_rate_step`.
-This respects [BIP-125 Implementation Details][] Rule 4.
+A pool member (leader or follower) authorizes an
+irregular swap party by showing a signature using
+an output inside the sidepool that it unilaterally
+controls.
 
-### Onchain Fee Charge Distribution
+Every swap party increments the update counter.
+This counter is limited to a maximum of 1023 swap
+parties.
+Thus, an irregular swap party is a cost on the
+sidepool, as it shortens the effective lifespan
+of the sidepool.
 
-In order to pay for the onchain fees, every transaction output
-in the current state has to have a small amount removed, the
-*onchain fee contribution tax*.
+A pool member that authorizes an irregular swap
+party pays a fixed fee, the
+`irregular_swap_party_fee_base`.
+This is removed during the Expansion phase of the
+irregular swap party.
 
-The total amount removed is equal to the total fees of all
-offchain transactions, from the kickoff, non-Last update
-transactions, and the Last update transaction.
+For version 1 pools, the
+`irregular_swap_party_fee_base` is 10 satoshis.
 
-This total is then divided by the number of transaction outputs,
-rounded up.
-The resulting rounded-up quotient is the onchain fee contribution
-tax for that state.
-The onchain fee contribution tax is then deducted from each
-transaction output.
+The contributed amount is ***not*** paid to any other
+pool member.
+Instead, all irregular swap party contributions are
+put into the Pay-for-Reseat Fund.
 
-> **Rationale** This distribution of the onchain fees
-> incentivizes participants to only have one transaction output
-> for all its unilaterally-controlled funds.
-> If a participant splits its unilaterally-controlled funds among
-> multiple outputs, it ends up paying more of the total onchain
-> fee.
->
-> While this reduces privacy, we should note that due to the
-> server-client relationship of the pool leader and the pool
-> followers, the pool leader already knows which funds are owned
-> by which Lightning Network nodes, as messages relating to the
-> expansion and contraction of those funds would arise from that
-> node anyway.
+If a swap party includes a Reseat phase, after the
+pool members have agreed on a feerate for the Reseat
+operation, the Pay-for-Reseat Fund pays for the
+onchain fee before any funds are deducted from the
+outputs in the output state.
+If the Pay-for-Reseat Fund can cover the entire onchain
+fee for the reseat (specifically, the common
+transaction fields, plus the input consuming the
+current funding outpoint and the output creating the
+new funding outpoint), the reseat will not reduce any
+in-sidepool funds.
+However, if the Pay-for-Reseat Fund is insufficient,
+the onchain fee for the reseat cost is paid by a
+shared deduction from all outputs in the current
+output state.
 
-The total onchain fee contribution tax is the individual onchain
-fee contribution tax times the number of transaction outputs in
-that state.
+In addition, the Pay-for-Reseat Fund is the onchain
+fee paid by the Last update transaction, as it is
+exactly equal to the difference between the output
+state and the input to the Last update transaction.
 
-This total onchain fee contribution tax may be equal, or larger
-than, the actual total fees paid for a unilateral close.
-The difference between the total onchain fee contribution tax,
-and the actual total fees, is the onchain fee contribution tax
-overpayment.
-
-This overpayment MUST NOT be put in the transaction fee of
-any of the transactions.
-Instead, the pool leader MUST maintain a non-zero amount of
-funds it unilaterally controls, and put this overpayment into
-the transaction output representing that fund.
-Thus, the pool leader may end up having a net positive amount on
-its unilaterally-controlled funds.
-
-> **Rationale** If the overpayment were put in the transaction
-> fee of the Last update transaction, then the Last update
-> transaction when the lowest bit is 0 might have a higher
-> overpayment than when the Last update transaction has a
-> lowest bit of 1.
-> This would change the difference in fees between those
-> transactions, possibly dropping below the RBF [BIP-125
-> Implementations Details][] Rule 4 requirement, so that a
-> broadcasted Last update transaction with bit 0 is not
-> replaced by the one with bit 1.
-
-The "*overpayment beneficiary*" is an output in the output state
-that is nominated by the pool leader to be the beneficiary of the
-onchain fee contribution tax overpayment.
-
-Thus, a transaction output in the current state has two values:
-
-* The in-current-state "*nominal amount*", which is used in all
-  sidepool operations.
-  * If an output is not consumed in an Expansion Phase or merged
-    in a Contraction Phase, the nominal amount does not change.
-* The in-last-transaction "*post-tax amount*", which is the above
-  nominal amount minus the onchain fee contribution tax, and for
-  the pool leader, plus the onchain fee contribution tax
-  overpayment.
-  The post-tax amount is the amount that is used in the Last
-  update transaction.
-  * The post-tax amount may change even if the output is not
-    consumed in an Expansion Phase or merged in a Contraction
-    Phase.
-    This variation depends on how many transaction outputs
-    actually would exist after a phase completes.
-
-All serializations of output states, and individual outputs, use
-nominal amounts.
-In order to regenerate the post-tax amount, the pool leader also
-needs to inform the other pool participants about the overpayment
-beneficiary.
-The post-tax amount is used when creating the outputs of the Last
-update transaction.
+When a sidepool is first opened, the Pay-for-Reseat
+Fund starts at 0 satoshis.
 
 Update Transaction Recreation
 -----------------------------
@@ -541,7 +515,7 @@ of them are recreated.
 
 To determine which update transactions need to be recreated, we
 need to check the current pool update counter (i.e. the counter
-value *before* the Expansion Phase completes).
+value *before* the Expansion Phase start).
 Recall that the pool update counter at the start of the Expansion
 Phase MUST be odd.
 
@@ -560,7 +534,7 @@ field itself) are all 1s.
 For example, to determine if the Third update transaction must be
 recreated, we should check the current pool update counter if
 bits 4, 3, 2, 1, 0 are all 1s, as those bits are to the right of
-the bit field of the Third update transaction.
+the bit field of the Third update transaction (bits 5 and 6).
 This is because once we add 1 to the counter, a carry of 1 will
 propagate all the way to bit 5, causing the Third update
 transaction to change.
@@ -597,8 +571,8 @@ and the First through Fifth update transactions do not need to be
 recreated.
 
 When recreating the update transactions, the relative time locks
-and the fee rates of the recreated update transactions should use
-the *next* pool update counter value, i.e. the one that is after
+of the recreated update transactions should use the
+*next* pool update counter value, i.e. the one that is after
 incrementing.
 
 Transaction Structure
@@ -606,6 +580,10 @@ Transaction Structure
 
 Intermediate Output Addresses
 -----------------------------
+
+We skip over the P2A output that exists for the kickoff
+and all update transactions; P2A outputs have a fixed
+address.
 
 The funding transaction output, the kickoff transaction output,
 and the non-Last update transaction outputs are all controlled by
@@ -648,8 +626,8 @@ The `<shared secret>` above is based on the sidepool identifier.
 * Each non-First, non-Last update transaction output uses the
   SHA256 of the shared secret of the previous update transaction.
 
-Note that the transaction outputs do **not** change based on the
-current pool update counter.
+Note that the transaction output `scriptPubKey`s do
+**not** change based on the current pool update counter.
 
 The only point of the `OP_RETURN` script is to blind
 non-participants who observe the blockchain.
@@ -669,7 +647,8 @@ Transaction Witness
 
 For the kickoff transaction and all update transactions, the
 witness always uses the keyspend path, and is simply the aggregate
-signature of all participants in the pool.
+signature of all participants in the pool (with a tweak
+as described above).
 
 When a sidepool mechanism is dropped onchain unilaterally by any
 participant (by publishing the kickoff transaction), the outputs
@@ -682,24 +661,24 @@ document.
 Last Update Transaction Outputs
 -------------------------------
 
-The onchain fee contribution tax and the onchain fee overpayment
-must be known, and the pool leader needs to also reveal which
-output should get the overpayment.
+The pool leader needs to provably reveal its output,
+as the P2A contribution is deducted from that output.
+In addition, the amount in the Pay-for-Reseat Fund
+must also be known.
 
 Outputs of the Last update transaction have the same ordering as
 the canonical ordering of the output state.
+In addition, an extra P2A output of 240 satoshis is the
+last output of the Last update transaction.
 
-When instantiating each output, the in-transaction amount has the
-onchain fee contribution tax deducted.
-For the output indicated by the pool leader as the overpayment
-beneficiary, the overpayment is added to the in-transaction
-amount for that output; note that the nominated beneficiary still
-must have its individual onchain fee contribution tax deducted.
+The first instance of the leader-owned output in the
+output state bag has `(1 + number_of_stages) * 240`
+satoshis deducted from it before being instantiated
+on the Last update transaction.
+These deducted funds are diverted to the P2A outputs.
 
-    if output_is_overpayment_beneficiary:
-        output = output - tax + overpayment
-    else:
-        output = output - tax
+The fee for the Last update transaction is equal to
+the current Pay-for-Reseat Fund.
 
 Addendum: Why Decker-Wattenhofer
 ================================
@@ -727,15 +706,16 @@ The decrementing-`nSequence` mechanism has two pros and a major
 con:
 
 * Decrementing-`nSequence` Pro:
-  * Can be implemented with existing 2023 Bitcoin.
+  * Can be implemented with existing 2025 Bitcoin.
   * Can be used by more than two participants.
 * Decrementing-`nSequence` Con:
   * Pushes a lot of data onchain in case of a unilateral close.
 
 Decker-Russell-Osuntokun ("eltoo") reduces the unilateral close
-to only two transactions, but cannot be implemented without
-changes to Bitcoin consensus as of 2023, and is thus not an
-option.
+to only two transactions in the economically-rational case.
+It can be emulated with 2025 Bitcoin, but would require
+an onerous number of parallel signing sessions once the
+mechanism has had enough updates.
 
 Law also presents two other mechanisms in [Efficient Factories For
 Lightning Channels][].
