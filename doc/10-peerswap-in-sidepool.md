@@ -1222,18 +1222,6 @@ get one or more in-Lightning HTLCs to the sender:
 * Otherwise, the local acceptor is the ultimate acceptor, and it
   MUST send a number of HTLCs.
 
-### Agreed-upon Amount of In-Lightning HTLCs
-
-The "*agreed upon amount*" of the in-Lightning HTLCs is the
-"post-tax amount" of the in-sidepool HTLC of this peerswap, as
-defined in [SIDEPOOL-02 Onchain Fee Charge Distribution][].
-
-[SIDEPOOL-02 Onchain Fee Charge Distribution]: ./02-transactions.md#onchain-fee-charge-distribution
-
-The total amount to be sent over each hop of the forwarded
-peerswap on the Lightning Network is equal to the "post-tax
-amount" of the in-sidepool HTLC.
-
 ### Forwarding `peerswap_lightning`
 
 A forwarder MUST NOT copy the `peerswap_lightning` message
@@ -1264,10 +1252,6 @@ A forwarder MUST instead wait for its own local acceptor to offer
 *all* in-Lightning HTLCs before itself offerring *any* HTLCs to
 the local offerrer.
 
-An acceptor (whether the ultimate acceptor, or a forwarder), once
-it is time to offer the in-Lightning HTLCs, first calculates the
-"agreed-upon amount" of the in-Lightning HTLCs, as above.
-
 Then, it makes a number of payments to the local offerrer.
 Each payment MUST NOT exceed any limit on the maximum HTLC to the
 local offerrer, such as any `htlc_maximum_msat` sent by the
@@ -1279,10 +1263,11 @@ Each payment MUST be a single hop, from the acceptor to its local
 offerrer.
 
 The acceptor MAY pay using one payment if the maximum HTLC size to
-the local offerrer is greater than or equal to the "agreed-upon
-amount".
+the local offerrer is greater than or equal to the
+in-sidepool HTLC amount.
 Otherwise, the acceptor MUST make multiple payments, each smaller
-than the maximum HTLC, all totalling to the "agreed-upon amount".
+than the maximum HTLC, all totalling to the in-sidepool
+HTLC amount.
 
 For each payment sent, the following MUST be true:
 
@@ -1324,11 +1309,10 @@ An offerrer waits until the total in-Lightning HTLCs that have
 been identified as part of the peerswap-in-sidepool (by recognizing
 the hash, timelock, and any `payment_secret` and/or
 `payment_metadata`), which have been irrevocably committed, have
-totalled to equal or greater than the "agreed-upon amount" of the
-in-Lightning HTLCs.
+totalled to equal or greater than in-sidepool HTLC amount.
 
-Until the amount reaches the agreed-upon amount, the offerrer MUST
-hold the incoming in-Lightning HTLCs.
+Until the amount reaches the in-sidepool HTLC amount,
+the offerrer MUST hold the incoming in-Lightning HTLCs.
 The offerrer MUST hold for up to 60 seconds, starting from when
 the first incoming in-Lightning HTLC has been irrevocably committed.
 Once this timer times out, the offerrer MUST fail (via
@@ -1338,7 +1322,7 @@ The offerrer MAY use any payment failure code.
 
 Once the total in-Lightning HTLCs of the peerswap-in-sidepool
 have been irrevocably committed, and the total amount equals or
-exceeds the "agreed-upon amount":
+exceeds the in-sidepool HTLC amount:
 
 * If the offerrer is the ultimate offerrer, it proceeds to
   peerswap resolution below, in the success path.
@@ -1350,9 +1334,10 @@ exceeds the "agreed-upon amount":
 > forwardable peerswap all occur along a single path.
 > Thus, there is no need for multipart payments where individual
 > parts may take different paths to the same destination.
-> Instead, each forwarder waits for the total "agreed-upon amount"
-> to be offerred and irrevocably committed by its local acceptor
-> before proceeding to forward.
+> Instead, each forwarder waits for the total in-sidepool
+> HTLC amount to be offerred and irrevocably committed
+> by its local acceptor before proceeding to forward
+> the in-lightning HTLC(s).
 > This allows each hop to handle its own `htlc_maximum_msat`
 > setting without requiring that the entire path agree on a single
 > maximum HTLC; the effective maximum is the current capacity of
@@ -1392,8 +1377,8 @@ Peerswap resolution is performed in one of two paths:
 
 * The success path, which the ultimate offerrer initiates once it
   has accepted in-Lightning HTLCs totalling or exceeding the
-  "agreed-upon amount", and all those HTLCs have been irrevocably
-  committed.
+  in-sidepool HTLC amount, and all those HTLCs have
+  been irrevocably committed.
   * The ultimate offerrer sends out `peerswap_success`, which
     forwarders then forward to the ultimate acceptor.
 * The fail path, which the ultimate acceptor initiates once *all*
@@ -1415,8 +1400,9 @@ In both cases, [SIDEPOOL-06 Private Key Handover][] is performed:
 ### Success Path
 
 In the success path (the ultimate offerrer receives total
-in-Lightning HTLCs equal or exceeding the agreed-upon amount), the
-ultimate offerrer MUST send `peerswap_success`.
+in-Lightning HTLCs equal or exceeding the in-sidepool
+HTLC amount), the ultimate offerrer MUST send
+`peerswap_success`.
 
 The ultimate offerrer MUST also fulfill each of the incoming
 in-Lightning HTLCs.
