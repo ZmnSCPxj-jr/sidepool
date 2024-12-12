@@ -62,7 +62,7 @@ In a channel without pending HTLCs, we can easily get the sense of
 "perfectly balanced" as the state where exactly half the channel
 is owned by one party, and the rest (exactly half as well) is owned
 by the other party.
-However, HTLCs are netheir here nor there, and channels may have
+However, HTLCs are neither here nor there, and channels may have
 pending HTLCs while a peerswap-in-sidepool is being negotiated.
 
 As a simplification, we assign HTLCs, regardless of size, age, or
