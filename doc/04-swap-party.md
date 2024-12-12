@@ -63,15 +63,20 @@ update of the hardware or software of the node at a time when no
 swap party is expected to occur.
 
 The pool leader is free to select this cadence.
-However, for conformity, pool leaders SHOULD schedule swap
+The time-of-day in UTC timezone that the regular swap
+party is performed is indicated by the pool leader
+when the sidepool is initially set up.
+
+For conformity, pool leaders SHOULD schedule swap
 parties for production sidepools daily, at 00:00 UTC.
 
-In case of a regular production sidepool schedule, the pool
-leader SHOULD start one swap party at any time from 00:00 UTC to
-00:30 UTC each day.
-The total allowed time for a swap party is up to 30 minutes
-(ideally, swap parties will take much less time than that, but in
-the worst case that is the allowed delay).
+In case of a regular production sidepool schedule, the
+pool leader SHOULD start one swap party at any time
+from 00:00 UTC to 00:30 UTC each day.
+The total allowed time for a swap party is up to 30
+minutes (ideally, swap parties will take much less
+time than that, but in the worst case that is the
+allowed delay).
 
 > **Rationale** If all sidepools have the same scheduled cadence
 > for swap parties, then the human operators of a node that
@@ -101,8 +106,7 @@ the worst case that is the allowed delay).
 > that the update has completed and problems are resolved.
 > Such suspension is arranged out-of-band to this specification;
 > (**non-normative**) actual implementations should support this
-> kind of suspension, as well as triggering swap parties "early"
-> or at any time.
+> kind of suspension.
 
 
 Swap Party Flow
@@ -139,7 +143,7 @@ When the pool leader decides to start a swap party:
   * They also share the MuSig2 nonces to be used for signing of
     the next state.
 * The pool leader provides the next state that will be created
-  for the Contraction Phase, and thte pool folowers validate that
+  for the Contraction Phase, and the pool folowers validate that
   the outputs they expect are in the next state.
   * The pool leader also provides the aggregated MuSig2 nonces to
     be used for signing.
@@ -173,6 +177,10 @@ Timeouts And Retransmissions
 
 All participants MUST impose timeouts:
 
+* A regular swap party can only be initiated within
+  30 minutes before to one hour after the time-of-day
+  specified by the pool leader during sidepool setup.
+* An irregular swap party can be initiated at any time.
 * Each phase can take no more than 10 minutes.
   * If a phase takes longer than 10 minutes, the participant MUST
     abort the entire pool.
@@ -215,7 +223,8 @@ leader waiting for responses from each follower.
 
 On reconnection, if the pool leader has most recently broadcast
 some message, and has not seen the pool follower respond, the
-pool leader MUST re-send that message.
+pool leader MUST re-send that message to that pool
+follower.
 If the pool leader has received a response from that pool
 follower, it SHOULD NOT re-send that message.
 
@@ -359,7 +368,7 @@ swap parties have been persistently deferred due to persistent
 inability to raise all the pool followers.
 See [SIDEPOOL-03][] (TODO: section) for how sidepools are aborted.
 
-> **Rationale** For example, the pool leader may defer a swap
+> **Rationale** For example, the pool leader may defer a regular swap
 > party for a few days, but if it is still unable to raise all the
 > pool followers for a swap party after a few days, then the
 > sidepool has become pointless as it cannot be used to manage
@@ -382,6 +391,29 @@ all pool followers.
       - Value: The sidepool identifier of the sidepool whose
         swap party begins now.
       - Required.
+    * `swap_party_begin_irregular_authorization` (40002)
+      - Length: 104
+      - Value: A structure composed of:
+        - 32 bytes: Taproot X-only Pubkey
+        - 8 bytes: Amount, in satoshis, big-endian 64-bit.
+        - 64 bytes: Taproot signature, as described in
+          [BIP-340][].
+      - Required if this is an irregular swap party.
+        Absent otherwise.
+
+The signature for
+`swap_party_begin_irregular_authorization`
+signs a [BIP-340 Design][] tagged hash:
+
+    tag = "sidepool version 1 irregular swap party"
+    content = Funding Transaction Output ||
+              Current Pool Update Counter ||
+              X-only Pubkey ||
+              Amount
+
+The `Current Pool Update Counter` is the odd value
+for the Update Counter before the Expansion Phase of
+the swap party being requested.
 
 Receivers of this message MUST validate the following:
 
@@ -389,6 +421,19 @@ Receivers of this message MUST validate the following:
   leader) of the given sidepool with the given pool identifier.
 * The message sender is the pool leader of the sidepool with the
   given pool identifier.
+* If the `swap_party_begin_irregular_authorization`
+  TLV exists:
+  - The specified Taproot X-only Pubkey and Amount
+    are an output present in the current output set
+    bag.
+  - The signature validates for the message above.
+  - The amount is greater than or equal to
+    `sidepool_version_1_min_amount + irregular_swap_party_fee_base`.
+* If the `swap_party_begin_irregular_authorization`
+  TLV does not exist:
+  - The current time-of-day is within 30 minutes
+    before to 1 hour after the specified regular
+    schedule of the sidepool setup.
 
 If the above validation fails, the receiver ignores the message,
 and SHOULD log a warning about the protocol violation.
@@ -580,9 +625,20 @@ Receivers of this message MUST validate the following:
       specified output can be indicated multiple times by
       different pool followers, up to the number of duplicates.
   * `swap_party_expand_request_newouts` must exist.
-    * The sum total of all amounts is exactly equal to the
-      amount specified in
-      `swap_party_expand_request_prevout_signed`.
+    * If the swap party is irregular, and the
+      `swap_party_expand_request_prevout_signed`
+      indicates the same output specified in
+      `swap_party_begin_irregular_authorization`:
+      - The sum total of all amounts in
+        `swap_party_expand_request_newouts` is
+        equal to the amount specified in
+        `swap_party_expand_request_prevout_signed`
+        minus `irregular_swap_party_fee_base`
+        (10 satoshis for version 1 pools).
+    * Otherwise:
+      - The sum total of all amounts is exactly equal
+        to the amount specified in
+        `swap_party_expand_request_prevout_signed`.
     * Each amount must be greater than or equal to the
       `sidepool_version_1_min_amount` specification in
       [SIDEPOOL-02][] (TODO: section).
@@ -639,6 +695,7 @@ If:
 * And the pool leader has not received any splice-in or
   splice-out requests, which would require a Reseat Phase to
   handle.
+* And the swap party is regular.
 
 ...then the pool leader MAY early-out and cancel the swap party
 with a `swap_party_but_nobody_came` message:
@@ -675,6 +732,7 @@ Receivers of this message MUST validate the following:
   leader) of the given sidepool with the given pool identifier.
 * The message sender is the pool leader of the given pool
   identifier.
+* The swap party is regular.
 
 If any of the above validation fails, the receiver SHOULD ignore
 the message and SHOULD log it as a warning or alarm it to the
@@ -703,6 +761,15 @@ recreated.
 
 The pool leader then broadcasts the `swap_party_expand_state`
 message, so that the pool followers can validate the new state.
+
+* If the output specified in
+  `swap_party_begin_irregular_authorization` was
+  *not* spent in any `swap_party_expand_request`, or
+  by the pool leader:
+  - That output has `irregular_swap_party_fee_base`
+    deducted in the post-Expansion state.
+
+The `swap_party_expand_state` message is:
 
 1.  `swap_party_expand_state` (404)
     - Sent from pool leader to pool followers, once the pool
