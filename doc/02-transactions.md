@@ -740,8 +740,8 @@ sidepool.
 Thus, the extra bond funds are a capital inefficiency that would
 be unnecessary under decrementing-`nSequence` mechanism.
 
-In the worst case, there exists a state where all the sidepool
-funds are owned by only one participant.
+In the worst case, there exists a previous state where all the
+sidepool funds are owned by only one participant.
 Then if the most recent valid state has that participant with 0
 funds (or close to it relative to the fund size) in the sidepool,
 that participant can attempt to publish the old state where they
@@ -749,6 +749,18 @@ owned all the sidepool funds.
 Thus, in order to make that unpalatable, the bond has to be the
 same size as the entire funding of the whole mechanism, and
 worse, *each* participant has to put that bond up.
+
+Another noteworthy thing about the bond fund UTXO is that it is
+bound to the mechanism.
+Yes, you may point out that exogenous UTXOs that pay for fees of
+P2A-spending CPFPs are another extra UTXO that is required per
+participant.
+The counterpoint is that if a participant is a participant of
+multiple independent P2A-using Decker-Wattenhofer mechanisms,
+and multiple independent anchor-commitment channels, that
+participant only requires one exogenous UTXO to for all of them.
+The JohnLaw2 constructions require a UTXO per participant per
+mechanism, which is worse.
 
 The alternative is to force participants to lock up funds inside
 the mechanism, which they can then not use in transactions within
