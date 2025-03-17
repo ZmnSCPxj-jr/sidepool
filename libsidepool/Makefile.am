@@ -34,9 +34,13 @@ AM_LOG_FLAGS += ASAN_OPTIONS="detect_leaks=1"
 endif
 endif
 
+# These will be loaded by the test suite.
+LDADD = libsidepool.a
+
 # Tests are written in C++.
 AM_DEFAULT_SOURCE_EXT = .cpp
 TESTS = \
+	tests/idler/test_methods \
 	tests/stringify/test_simple
 check_PROGRAMS = $(TESTS)
 

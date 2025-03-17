@@ -27,14 +27,22 @@ private:
 		f_free(libsidepool_idle_callback* self_) {
 			auto self = std::unique_ptr<Callback>(static_cast<Callback*>(self_));
 			assert(self);
+			assert(self->fail);
+			self->pass = nullptr;
+			try {
+				throw Sidepool::Freed();
+			} catch (...) {
+				self->fail(std::current_exception());
+			}
 			self = nullptr;
 		}
 		static void
 		f_invoke(libsidepool_idle_callback* self_) {
 			auto self = std::unique_ptr<Callback>(static_cast<Callback*>(self_));
 			assert(self);
-			assert(self->func);
-			self->func();
+			assert(self->pass);
+			self->fail = nullptr;
+			self->pass();
 			self = nullptr;
 		}
 
@@ -42,10 +50,14 @@ private:
 		Callback(Callback const&) =delete;
 		Callback(Callback&&) =delete;
 
-		std::function<void(void)> func;
+		std::function<void(void)> pass;
+		std::function<void(std::exception_ptr)> fail;
 	public:
 		explicit
-		Callback(std::function<void(void)> func_) : func(std::move(func_)) {
+		Callback( std::function<void(void)> pass_
+			, std::function<void(std::exception_ptr)> fail_
+			) : pass(std::move(pass_))
+			  , fail(std::move(fail_)) {
 			free = &f_free;
 			invoke = &f_invoke;
 		}
@@ -88,7 +100,7 @@ public:
 				}
 			};
 			iop->run(std::move(pass), std::move(fail));
-		});
+		}, [](std::exception_ptr) { });
 		/* Pass it on.  */
 		c_intf->on_idle(c_intf, cb.release());
 	}
@@ -97,7 +109,7 @@ public:
 		return Sidepool::Io<void>([this]( std::function<void(void)> pass
 						, std::function<void(std::exception_ptr)> fail
 						) {
-			auto cb = std::make_unique<Callback>(pass);
+			auto cb = std::make_unique<Callback>(pass, fail);
 			c_intf->on_idle(c_intf, cb.release());
 		});
 	}
