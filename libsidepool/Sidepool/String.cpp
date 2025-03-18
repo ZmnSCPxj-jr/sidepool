@@ -43,5 +43,26 @@ std::string vfmt( char const* tpl
 	return std::string(buf.get());
 }
 
+std::string strftime(char const* tpl, std::tm const& tm) {
+	auto written = std::size_t(0);
+	auto size = std::size_t(64);
+	auto buf = std::unique_ptr<char[]>();
+
+	do {
+		if (size <= written) {
+			size = written + 1;
+		}
+		buf = std::make_unique<char[]>(size);
+		written = std::strftime(
+			buf.get(),
+			size,
+			tpl,
+			&tm
+		);
+	} while (size <= written);
+
+	return std::string(buf.get());
+}
+
 }
 

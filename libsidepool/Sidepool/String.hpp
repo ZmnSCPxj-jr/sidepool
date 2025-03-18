@@ -5,6 +5,7 @@
 # include"config.h"
 #endif
 #include<cstdarg>
+#include<ctime>
 #include<string>
 
 namespace Sidepool::String {
@@ -15,6 +16,8 @@ std::string fmt(char const* tpl, ...)
 #endif
 ;
 std::string vfmt(char const* tpl, std::va_list ap);
+
+std::string strftime(char const* tpl, std::tm const& tm);
 
 }
 

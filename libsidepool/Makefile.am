@@ -14,6 +14,8 @@ libsidepool_a_SOURCES = \
 	Sidepool/Io.hpp \
 	Sidepool/Idler.cpp \
 	Sidepool/Idler.hpp \
+	Sidepool/Logger.cpp \
+	Sidepool/Logger.hpp \
 	Sidepool/String.cpp \
 	Sidepool/String.hpp \
 	Sidepool/stringify.hpp \
