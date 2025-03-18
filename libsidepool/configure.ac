@@ -9,6 +9,15 @@ AC_CONFIG_MACRO_DIR([m4])
 AM_INIT_AUTOMAKE([-Wall -Werror subdir-objects 1.13])
 AC_CONFIG_HEADERS([config.h])
 
+AH_TOP([
+#pragma once
+#ifndef LIBSIDEPOOL_CONFIG_H_INCLUDED_
+#define LIBSIDEPOOL_CONFIG_H_INCLUDED_
+])
+AH_BOTTOM([
+#endif /* !defined(LIBSIDEPOOL_CONFIG_H_INCLUDED_) */
+])
+
 # Checks for programs.
 AC_PROG_RANLIB
 AM_PROG_AR
@@ -66,6 +75,18 @@ int main() { return 0; }
 CXXFLAGS="${saved_CXXFLAGS}"
 AC_MSG_RESULT([${use_fsanitize_leak}])
 AM_CONDITIONAL([USE_FSANITIZE_LEAK], [test x"$use_fsanitize_leak" = xyes])
+
+AC_MSG_CHECKING([if compiler supports __attribute__((format))])
+AC_COMPILE_IFELSE([AC_LANG_SOURCE([[
+int fake_printf(void* dummy, char const* fmt, ...)
+	__attribute__((format (printf, 2, 3)))
+;
+]])], [#then
+    AC_DEFINE([HAVE_ATTRIBUTE_FORMAT], [1], [Define to 1 if understands gcc __attribute__((format))])
+    AC_MSG_RESULT([yes])
+], [#else
+    AC_MSG_RESULT([no])
+])
 
 # Checks for library functions.
 
