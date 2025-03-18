@@ -14,6 +14,8 @@ libsidepool_a_SOURCES = \
 	Sidepool/Io.hpp \
 	Sidepool/Idler.cpp \
 	Sidepool/Idler.hpp \
+	Sidepool/String.cpp \
+	Sidepool/String.hpp \
 	Sidepool/stringify.hpp \
 	libsidepool.h
 
@@ -41,6 +43,7 @@ LDADD = libsidepool.a
 AM_DEFAULT_SOURCE_EXT = .cpp
 TESTS = \
 	tests/idler/test_methods \
+	tests/string/test_fmt \
 	tests/stringify/test_simple
 check_PROGRAMS = $(TESTS)
 
