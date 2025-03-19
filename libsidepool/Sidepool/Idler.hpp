@@ -19,9 +19,8 @@ namespace Sidepool {
 class Idler {
 public:
 	virtual ~Idler() { }
-	/** Called only at the initialization of a
-	 * fresh libsidepool instance, this starts
-	 * the initial main greenthread.
+	/** Start the given action the next time
+	 * the process is idle.
 	 *
 	 * If the given greenthread throws a
 	 * Sidepool::Freed, this should ignore the
