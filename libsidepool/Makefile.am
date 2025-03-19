@@ -18,6 +18,8 @@ libsidepool_a_SOURCES = \
 	Sidepool/Logger.hpp \
 	Sidepool/Main.cpp \
 	Sidepool/Main.hpp \
+	Sidepool/Randomizer.cpp \
+	Sidepool/Randomizer.hpp \
 	Sidepool/S/Bus.cpp \
 	Sidepool/S/Bus.hpp \
 	Sidepool/S/Detail/Lease.hpp \
