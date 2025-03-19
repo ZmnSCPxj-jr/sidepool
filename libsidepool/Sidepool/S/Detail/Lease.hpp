@@ -57,6 +57,8 @@ public:
 	/* Not copyable or movable.  */
 	Lease(Lease const&) =delete;
 	Lease(Lease&&) =delete;
+
+	virtual ~Lease() =default;
 };
 
 }

@@ -31,6 +31,8 @@ public:
 	TypedLease(TypedLease const&) =delete;
 	TypedLease(TypedLease&&) =delete;
 
+	~TypedLease() =default;
+
 	explicit
 	TypedLease( std::function<Sidepool::Io<void>(a const&)> fun_
 		  ) : fun(std::move(fun_)) { }
