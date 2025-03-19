@@ -1,6 +1,6 @@
 #pragma once
-#ifndef SIDEPOOL_S_LESSOR_HPP_
-#define SIDEPOOL_S_LESSOR_HPP_
+#ifndef SIDEPOOL_S_LESSEE_HPP_
+#define SIDEPOOL_S_LESSEE_HPP_
 
 #include<memory>
 
@@ -10,7 +10,7 @@ namespace Sidepool::S::Detail { class Lease; }
 
 namespace Sidepool::S {
 
-/** class Sidepool::S::Lessor
+/** class Sidepool::S::Lessee
  *
  * @desc An object that, if it is destroyed,
  * automatically deregisters all registered
@@ -22,7 +22,7 @@ namespace Sidepool::S {
  * also destroyed, but there would be
  * no memory leak.
  */
-class Lessor {
+class Lessee {
 private:
 	std::shared_ptr<Detail::Lease> top;
 
@@ -35,14 +35,14 @@ private:
 
 public:
 	explicit
-	Lessor() : top(nullptr) { }
+	Lessee() : top(nullptr) { }
 	/* Disallow copy and move.  */
-	Lessor(Lessor const&) =delete;
-	Lessor(Lessor&&) =delete;
+	Lessee(Lessee const&) =delete;
+	Lessee(Lessee&&) =delete;
 
-	~Lessor();
+	~Lessee();
 };
 
 }
 
-#endif /* !defined(SIDEPOOL_S_LESSOR_HPP_) */
+#endif /* !defined(SIDEPOOL_S_LESSEE_HPP_) */

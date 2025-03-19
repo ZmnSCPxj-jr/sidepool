@@ -4,7 +4,7 @@
 
 #include"Sidepool/S/Detail/TypedLease.hpp"
 #include"Sidepool/S/Detail/TypedRegistry.hpp"
-#include"Sidepool/S/Lessor.hpp"
+#include"Sidepool/S/Lessee.hpp"
 #include<functional>
 #include<memory>
 #include<typeindex>
@@ -73,7 +73,7 @@ public:
 	}
 	template<typename a>
 	void
-	subscribe( Lessor& lessor
+	subscribe( Lessee& lessee
 		 , std::function<Sidepool::Io<void>(a const& val)> cb
 		 ) {
 		auto r = get_registry(
@@ -83,7 +83,7 @@ public:
 		});
 		auto nlease = std::make_shared<Detail::TypedLease<a>>(std::move(cb));
 		r->add_lease(nlease);
-		lessor.add_lease(std::move(nlease));
+		lessee.add_lease(std::move(nlease));
 	}
 };
 

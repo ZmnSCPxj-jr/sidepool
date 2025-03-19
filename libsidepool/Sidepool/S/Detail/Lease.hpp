@@ -5,7 +5,7 @@
 #include<memory>
 
 /* Forward declare.  */
-namespace Sidepool::S { class Lessor; }
+namespace Sidepool::S { class Lessee; }
 namespace Sidepool::S::Detail { class Registry; }
 
 namespace Sidepool::S::Detail {
@@ -25,12 +25,12 @@ namespace Sidepool::S::Detail {
  * singly-linked embedded lists:
  *
  * - A list owned by a `Sidepool::S::Detail::Registry`
- * - A list owned by a `Sidepool::S::Lessor`
+ * - A list owned by a `Sidepool::S::Lessee`
  */
 class Lease {
 private:
 	friend class Sidepool::S::Detail::Registry;
-	friend class Sidepool::S::Lessor;
+	friend class Sidepool::S::Lessee;
 
 	/** The `next` field for the registry list.  */
 	std::shared_ptr<Lease> next_reg;

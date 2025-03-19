@@ -23,8 +23,8 @@ libsidepool_a_SOURCES = \
 	Sidepool/S/Detail/Registry.hpp \
 	Sidepool/S/Detail/TypedLease.hpp \
 	Sidepool/S/Detail/TypedRegistry.hpp \
-	Sidepool/S/Lessor.cpp \
-	Sidepool/S/Lessor.hpp \
+	Sidepool/S/Lessee.cpp \
+	Sidepool/S/Lessee.hpp \
 	Sidepool/String.cpp \
 	Sidepool/String.hpp \
 	Sidepool/stringify.hpp \
@@ -62,7 +62,7 @@ LDADD = libsidepool.a
 AM_DEFAULT_SOURCE_EXT = .cpp
 TESTS = \
 	tests/idler/test_methods \
-	tests/s/test_kill_lessor \
+	tests/s/test_kill_lessee \
 	tests/s/test_simple_bus \
 	tests/string/test_fmt \
 	tests/stringify/test_simple

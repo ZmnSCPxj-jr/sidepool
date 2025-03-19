@@ -2,14 +2,14 @@
 # include"config.h"
 #endif
 #include"Sidepool/S/Detail/Lease.hpp"
-#include"Sidepool/S/Lessor.hpp"
+#include"Sidepool/S/Lessee.hpp"
 #include<cassert>
 #include<utility>
 
 namespace Sidepool::S {
 
 void
-Lessor::add_lease(
+Lessee::add_lease(
 		std::shared_ptr<Detail::Lease> nlease
 ) {
 	assert(nlease);
@@ -17,7 +17,7 @@ Lessor::add_lease(
 	top = std::move(nlease);
 }
 
-Lessor::~Lessor() {
+Lessee::~Lessee() {
 	while (top) {
 		top->clear();
 		top = std::move(top->next_lessor);

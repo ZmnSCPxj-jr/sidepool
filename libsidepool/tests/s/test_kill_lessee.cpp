@@ -3,7 +3,7 @@
 #endif
 #undef NDEBUG
 #include"Sidepool/S/Bus.hpp"
-#include"Sidepool/S/Lessor.hpp"
+#include"Sidepool/S/Lessee.hpp"
 #include"Testing/Idler.hpp"
 #include<cassert>
 #include<cstddef>
@@ -17,17 +17,17 @@ struct Example { };
 int main() {
 	auto idler = Testing::Idler::make();
 	auto bus = Sidepool::S::Bus(*idler);
-	auto lessor1 = std::make_unique<Sidepool::S::Lessor>();
-	auto lessor2 = std::make_unique<Sidepool::S::Lessor>();
+	auto lessee1 = std::make_unique<Sidepool::S::Lessee>();
+	auto lessee2 = std::make_unique<Sidepool::S::Lessee>();
 
 	auto count = std::size_t(0);
 	auto count2 = std::size_t(0);
 
-	bus.subscribe<Example>(*lessor1, [&](Example const& _) {
+	bus.subscribe<Example>(*lessee1, [&](Example const& _) {
 		++count;
 		return Sidepool::lift();
 	});
-	bus.subscribe<Example>(*lessor2, [&](Example const& _) {
+	bus.subscribe<Example>(*lessee2, [&](Example const& _) {
 		++count;
 		++count2;
 		return Sidepool::lift();
@@ -38,26 +38,26 @@ int main() {
 
 		return bus.raise(Example{});
 	}).then([&]() {
-		/* Both lessors should have
+		/* Both lessees should have
 		triggered.
 		*/
 		assert(count == 2);
 		assert(count2 == 1);
 
-		/* Kill lessor1.  */
-		lessor1 = nullptr;
+		/* Kill lessee1.  */
+		lessee1 = nullptr;
 
 		return bus.raise(Example{});
 	}).then([&]() {
-		/* lessor2 should have triggered,
+		/* lessee2 should have triggered,
 		count and count2 have incremented
 		once each.
 		*/
 		assert(count == 3);
 		assert(count2 == 2);
 
-		/* Kill lessor2.  */
-		lessor2 = nullptr;
+		/* Kill lessee2.  */
+		lessee2 = nullptr;
 
 		return bus.raise(Example{});
 	}).then([&]() {

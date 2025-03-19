@@ -3,7 +3,7 @@
 #endif
 #undef NDEBUG
 #include"Sidepool/S/Bus.hpp"
-#include"Sidepool/S/Lessor.hpp"
+#include"Sidepool/S/Lessee.hpp"
 #include"Testing/Idler.hpp"
 #include<cassert>
 #include<cstddef>
@@ -19,12 +19,12 @@ struct Example2 {
 
 int main() {
 	auto idler = Testing::Idler::make();
-	auto lessor = Sidepool::S::Lessor();
+	auto lessee = Sidepool::S::Lessee();
 	auto bus = Sidepool::S::Bus(*idler);
 
 	auto count = std::size_t(0);
 
-	bus.subscribe<Example>(lessor, [&](Example const&) {
+	bus.subscribe<Example>(lessee, [&](Example const&) {
 		++count;
 		return Sidepool::lift();
 	});
