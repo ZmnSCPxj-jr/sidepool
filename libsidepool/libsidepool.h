@@ -906,7 +906,7 @@ void libsidepool_receive_message(
 	 * This does NOT include the
 	 * LIBSIDEPOOL_MESSAGE_ID message ID.
 	 */
-	/*borrows*/ uint8_t* message
+	/*borrows*/ uint8_t const* message
 );
 
 /** struct libsidepool_noder_sendmsg
