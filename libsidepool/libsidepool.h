@@ -106,6 +106,27 @@ void libsidepool_init_cancel(
 	/*takes*/ struct libsidepool_init*
 );
 
+/** libsidepool_init_give_random
+ *
+ * @desc Call this function with at least 32 bytes
+ * of high-entropy random data, gotten from your
+ * system cryptographically-secure random number
+ * source (`/dev/random`, `getentropy`,
+ * `CryptGenRandom`...).
+ *
+ * You may call this multiple times with different
+ * data.
+ * As long as the sum total of `data_length`
+ * equals or exceeds 32, this is fine, but if the
+ * total `data_length` is less than that,
+ * `libsidepool_init_finish` will fail.
+ */
+void libsidepool_init_give_random(
+	/*borrows*/ struct libsidepool_init*,
+	/*borrows*/ uint8_t const* data,
+	unsigned int data_length
+);
+
 /** struct libsidepool_logger
  *
  * @desc A client-provided interface structure which
@@ -920,7 +941,10 @@ struct libsidepool_noder_sendmsg {
 	 */
 	uint8_t* message_data;
 	/** Call if the client is unable to connect
-	 * to the peer to send the message.
+	 * to the peer to send the message, or if
+	 * the noder object is freed before we
+	 * could confirm that the message has been
+	 * enqueued for sending.
 	 */
 	void (*fail)(
 		/*takes*/
@@ -945,13 +969,327 @@ struct libsidepool_noder_sendmsg {
 	 * messages are not received by the peer,
 	 * and the client does not need to worry
 	 * as long as it has made a best-effort
-	 * to get the message to the peer.
+	 * attempt to get the message to the peer.
+	 *
+	 * You SHOULD call this *after* you have
+	 * established connection to the peer
+	 * (if you do not have a connection to
+	 * the peer yet).
 	 */
 	void (*pass)(
 		/*takes*/
 		struct libsidepool_noder_sendmsg
 	);
 };
+
+/** struct libsidepool_noder_getchannel
+ *
+ * @desc A library-provided interface and data
+ * structure that contains a request to list
+ * the totals of all live channels with a
+ * specific peer.
+ *
+ * The node should only report channels that
+ * have been "locked in" (after `channel_ready`
+ * has been exchanged by both peers) but before
+ * it has seen any attempt to close / `shutdown`
+ * or before it makes its own attempt to close
+ * the chnnel.
+ *
+ * If the node software supports multiple
+ * channels per peer, the noder object should
+ * report each one with separate calls to
+ * `report`.
+ *
+ * If the node has no live channel with the
+ * peer, just call `finish` without calling
+ * `report`.
+ */
+struct libsidepool_noder_getchannel {
+	/** A pointer to a user structure.  */
+	void* user;
+	/** The node public key / node ID of the
+	 * peer.
+	 */
+	uint8_t peer[33];
+	/** Call this if the noder object is
+	 * freed before you can complete the
+	 * request.
+	 *
+	 * It is OK to call this after calling
+	 * `report`.
+	 */
+	void (*free)(
+		/*takes*/
+		struct libsidepool_noder_getchannel*
+	);
+	/** Call this with the details of
+	 * *one* live channel with the
+	 * specified peer.
+	 *
+	 * - `capacity_sat != 0`
+	 * - `our_side_msat + their_side_msat <= capacity_sat * 1000`
+	 *
+	 * Note that you MUST NOT compute
+	 * `their_side_msat = capacity_sat * 1000 - our_side_msat`
+	 * (or vice versa); HTLCs are neither
+	 * ours nor theirs.
+	 * You should be using the channel amounts
+	 * that are singly ours and singly theirs.
+	 *
+	 * The amounts should also include any
+	 * channel reserve requirements and any
+	 * non-anchor fees.
+	 */
+	void (*report)(
+		/*borrows*/
+		struct libsidepool_noder_getchannel*,
+		/** Total channel capacity, in
+		 * satoshis.
+		 * This is the amount of the UTXO
+		 * backing this channel, if this
+		 * were a normal LN BOLT channel.
+		 */
+		uint64_t capacity_sat,
+		/** The amount in this channel that
+		 * is unambiguously on our side.
+		 * HTLCs MUST NOT be counted in
+		 * either our side or their side.
+		 * This should include any onchain
+		 * fees and any reserve requirements.
+		 */
+		uint64_t our_side_msat,
+		/** The amount in the channel that
+		 * is unambiguously on their
+		 * side.
+		 * This should include any onchain
+		 * fees and any reserve requirements.
+		 */
+		uint64_t their_side_msat
+	);
+	/** Call this after you have reported all
+	 * channels with the specified peer.
+	 */
+	void (*finish)(
+		/*takes*/
+		struct libsidepool_noder_getchannel*
+	);
+};
+
+/** struct libsidepool_noder_ping
+ *
+ * @desc A library-provided interface and data
+ * structure that indicates to connect to,
+ * and send a BOLT1 `ping` message, and wait
+ * for a corresponding `pong`.
+ */
+struct libsidepool_noder_ping {
+	/** A pointer to a user structure.  */
+	void* user;
+	/** The node public key / node ID of
+	 * the peer to connect to and `ping`,
+	 * and wait for a `pong`.
+	 */
+	uint8_t peer[33];
+	/** The `num_pong_bytes` field to put
+	 * in the `ping` message.
+	 *
+	 * `libsidepool` promises that for this
+	 * version and for all future versions,
+	 * this will be 0.
+	 * It is only included for completeness.
+	 */
+	uint16_t num_pong_bytes;
+	/** The time limit to wait for a `pong`.
+	 * If you are unable to get the connection,
+	 * send a `ping`, and get some `pong`
+	 * from the peer with a 0-length payload.
+	 * then call the `timed_out` function.
+	 *
+	 * This is in seconds since the Unix epoch,
+	 * or at least whatever reference that
+	 * `time` returns on your system.
+	 */
+	uint64_t timeout;
+	/** Call this if the noder is freed
+	 * before you could respond to the
+	 * libsidepool.
+	 */
+	void (*free)(
+		/*takes*/
+		struct libsidepool_noder_ping*
+	);
+	/** Call this if the `timeout` has
+	 * been reached or exceeded without the
+	 * peer responding with `pong`.
+	 */
+	void (*fail)(
+		/*takes*/
+		struct libsidepool_noder_ping*
+	);
+	/** Call this upon receiving `pong` from
+	 * the peer.
+	 */
+	void (*pass)(
+		/*takes*/
+		struct libsidepool_noder_ping*
+	);
+};
+
+/* TODO: figure out HTLCs in the noder.
+
+The problem is that LDK and CLN have different
+hooks for HTLC acceptance.
+
+CLN allows a plugin to hook into arbitrary
+HTLCs you receive.
+However, LDK will only trigger a hook if you
+pre-register the HTLC hash, and it will give
+you a `payment_secret` that has to appear
+on the incoming HTLC, before it will let you
+handle the HTLC.
+And it is not clear to me that the incoming
+HTLC would re-trigger the hook on restart
+(CLN would re-trigger the hook).
+*/
+/* TODO: noder.  */
+
+struct libsidepool_keykeeper_req;
+
+/** struct libsidepool_keykeeper
+ *
+ * @desc A client-provided interface class that
+ * is used to interact with a fixed client-owned
+ * private key, without exposing the private key
+ * to libsidepool.
+ *
+ * The keykeeper object must represent some
+ * private high-entropy key that is constant
+ * for all constructions of the `libsidepool`
+ * object of the node.
+ * For example, the keykeeper can be an object
+ * that holds the private key of the Lightning
+ * Network node ID of the node that is using
+ * `libsidepool`.
+ *
+ * Basically, the key being kept must be
+ * the same even across restarts of the node.
+ * `libsidepool` will check this by storing
+ * both the entropy and the public key
+ * corresponding to the key returned by the
+ * first-ever time it called into this interface,
+ * and report an error in case of mismatch.
+ *
+ * This is still an asynchronous interface,
+ * because ideally you would isolate the node
+ * private key in a separate process at the very
+ * least, and ideally on different hardware.
+ */
+struct libsidepool_keykeeper {
+	/** A pointer to a user structure.  */
+	void* user;
+	/** If non-`NULL`, called on cancellation of
+	 * the `struct libsidepool_init`, or freeing
+	 * of the `struct libsidepool`, to free this
+	 * keykeeper.
+	 */
+	void (*free)(
+		/*takes*/ struct libsidepool_keykeeper*
+	);
+	/** Request a private key that is a
+	 * deterministic function of the
+	 * entropy in the given request and the
+	 * client fixed private key.
+	 *
+	 * For a CLN node, this can be implemented
+	 * via the `makesecret` RPC command.
+	 */
+	void (*request)(
+		/*borrows*/
+		struct libsidepool_keykeeper*,
+		/*takes*/
+		struct libsidepool_keykeeper_req*
+	);
+};
+
+/** struct libsidepool_keykeeper_req
+ *
+ * @desc A libsidepool-provided interface and
+ * data structure that contains the details of
+ * the request to get a tweaked key.
+ */
+struct libsidepool_keykeeper_req {
+	/** A pointer to a user structure.  */
+	void* user;
+	/** The tweak; some random non-secret
+	 * entropy that should be fed to a
+	 * deterministic function, together with
+	 * the keykeeper secret key, to generate
+	 * the tweaked_key.
+	 * This is an input to the keykeeper
+	 * `request` interface.
+	 *
+	 * You must use a deterministic trapdoor
+	 * function that does not leak the
+	 * fixed secret key held by the keykeeper.
+	 * For example, you can use HMAC-SHA256
+	 * with the keykeeper secret as the key
+	 * and this tweak as the data.
+	 */
+	/*input*/ uint8_t tweak[32];
+	/** The output result of taking the
+	 * above tweak and the keykeeper secret
+	 * and combining them into some deterministic
+	 * trapdoor function.
+	 * `libsidepool` initializes this to all 0s
+	 * before calling into `request`.
+	 */
+	/*output*/ uint8_t tweaked_key[32];
+	/** Call this if the keykeeper is freed
+	 * before you could complete this request.
+	 */
+	void (*free)(
+		/*takes*/
+		struct libsidepool_keykeeper_req*
+	);
+	/** Call this after you have loaded the
+	 * `tweaked_key` output.
+	 *
+	 * It is perfectly safe to call this
+	 * directly from the keykeeper `request`
+	 * function; `libsidepool` will copy the
+	 * resulting tweaked key and then
+	 * schedule the continuation of the process
+	 * during an idle period via your provided
+	 * idler.
+	 * For example, if you keep the node private
+	 * key in the memory of the process that
+	 * also contains the `libsidepool` instance,
+	 * and use the node private key as the
+	 * fixed keykeeper secret, you do not need
+	 * to wait, you can just call this immediately
+	 * after you calculate the secret.
+	 */
+	void (*pass)(
+		/*takes*/
+		struct libsidepool_keykeeper_req*
+	);
+};
+
+/** libsidepool_init_set_keykeeper
+ *
+ * @desc Give an instance of
+ * `struct libsidepool_keykeeper` to the given
+ * initializer instance.
+ *
+ * After this call, the library is responsible for
+ * calling the `free` method of the given
+ * keykeeper.
+ */
+void libsidepool_init_set_keykeeper(
+	/*borrows*/ struct libsidepool_init*,
+	/*takes*/ struct libsidepool_keykeeper*
+);
 
 #ifdef __cplusplus
 }
