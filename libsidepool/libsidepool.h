@@ -106,26 +106,77 @@ void libsidepool_init_cancel(
 	/*takes*/ struct libsidepool_init*
 );
 
-/** libsidepool_init_give_random
+/** struct libsidepool_randomizer
  *
- * @desc Call this function with at least 32 bytes
- * of high-entropy random data, gotten from your
- * system cryptographically-secure random number
- * source (`/dev/random`, `getentropy`,
- * `CryptGenRandom`...).
+ * @desc A client-provided interface structure which
+ * gets high-quality random number from somewhere
+ * (`getentropy`, `getrandom`, `read_random`,
+ * `/dev/random`, `CryptRandom`, `SetRandom`,
+ * etc).
  *
- * You may call this multiple times with different
- * data.
- * As long as the sum total of `data_length`
- * equals or exceeds 32, this is fine, but if the
- * total `data_length` is less than that,
- * `libsidepool_init_finish` will fail.
+ * Ideally, if your OS thinks that it has
+ * insufficient randomness and wants to block,
+ * just let it block; this interface is
+ * asynchronous so if the OS provides a
+ * synchronous blocking interface (because
+ * POSIX-me-harder) you should use the
+ * POSIX-me-harder threadpool technique
+ * described above.
  */
-void libsidepool_init_give_random(
-	/*borrows*/ struct libsidepool_init*,
-	/*borrows*/ uint8_t const* data,
-	unsigned int data_length
-);
+struct libsidepool_randomizer {
+	/** A pointer to a user structure.
+	 *
+	 * The provider of this interface structure
+	 * may use this pointer arbitrarily for any
+	 * purpose, including leaving it
+	 * uninitialized.
+	 */
+	void* user;
+	/** If non-`NULL`, called on cancellation
+	 * of `libsidepool_init` or freeing of the
+	 * `struct libsidepool`, to free this
+	 * randomizer.
+	 */
+	void (*free)(
+		/*takes*/
+		struct libsidepool_randomizer*
+	);
+	/** Called by the `libsidepool` library
+	 * to get 32 bytes of high-quality
+	 * random data.
+	 *
+	 * It is safe for this function to call
+	 * `pass` synchronously, though if your
+	 * OS provides a synchronous blocking
+	 * interface you should really transform
+	 * it into an asynchronous one.
+	 */
+	void (*rand)(
+		/*borrows*/
+		struct libsidepool_randomizer*,
+		/** Callback to call after you
+		 * have gotten 32 random bytes.
+		 */
+		/*borrows*/
+		void (*pass)(
+			/*takes*/void* context,
+			/*borrows*/
+			uint8_t random[32]
+		),
+		/** Callback to call if the
+		 * randomizer is freed before
+		 * you could get the random
+		 * bytes.
+		 */
+		/*borrows*/
+		void (*fail)(/*takes*/void* context),
+		/** The context to pass to either
+		 * pass or fail.
+		 */
+		/*takes*/
+		void* context
+	);
+};
 
 /** struct libsidepool_logger
  *
