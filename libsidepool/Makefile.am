@@ -62,6 +62,7 @@ LDADD = libsidepool.a
 AM_DEFAULT_SOURCE_EXT = .cpp
 TESTS = \
 	tests/idler/test_methods \
+	tests/s/test_kill_lessor \
 	tests/s/test_simple_bus \
 	tests/string/test_fmt \
 	tests/stringify/test_simple
