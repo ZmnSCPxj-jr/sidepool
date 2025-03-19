@@ -16,6 +16,8 @@ libsidepool_a_SOURCES = \
 	Sidepool/Idler.hpp \
 	Sidepool/Logger.cpp \
 	Sidepool/Logger.hpp \
+	Sidepool/Main.cpp \
+	Sidepool/Main.hpp \
 	Sidepool/S/Bus.cpp \
 	Sidepool/S/Bus.hpp \
 	Sidepool/S/Detail/Lease.hpp \
