@@ -78,6 +78,33 @@ public:
 			(*pcore)(pass, sub_fail);
 		});
 	}
+	Io<a> catch_all(std::function<Io<a>(std::exception_ptr)> handler)&& {
+		auto pcore = std::make_shared<CoreFunc>(std::move(core));
+		auto phandler = std::make_shared<std::function<Io<a>(std::exception_ptr)>>(std::move(handler));
+		return Io<a>([ pcore
+			     , phandler
+			     ]( typename Detail::PassFunc<a>::type pass
+			      , std::function<void (std::exception_ptr)> fail
+			      ) {
+			auto sub_fail = [ pass
+					, fail
+					, phandler
+					](std::exception_ptr err) {
+				try {
+					(*phandler)(err).core(pass, fail);
+				} catch (...) {
+					fail(std::current_exception());
+				}
+			};
+			(*pcore)(pass, sub_fail);
+		});
+	}
+	Io<a> catch_all(std::function<Io<a>()> handler)&& {
+		auto phandler = std::make_shared<std::function<Io<a>()>>(std::move(handler));
+		return std::move(*this).catch_all([phandler](std::exception_ptr _) {
+			return (*phandler)();
+		});
+	}
 };
 
 }
