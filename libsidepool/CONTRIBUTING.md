@@ -29,6 +29,9 @@ Rules:
    except the C interface in `libsidepool.h`,
    where everything should be prefixed
    `libsidepool_` instead.
+   - Except for testing stuff in the `Testing`
+     namespace, which is not included in the
+     `libsidepool.a` anyway thus safu.
 4. `Sidepool::Io` is awesome, use it as much as
    possible.
    - Gets you tail-call-optimization for free
@@ -44,7 +47,7 @@ Rules:
      `Sidepool::Io<void>`s?
      It even works with `operator+=`.
 5. Every `.cpp` file must start with
-   `#ifdef HAVE_CONFIG_H #include"config.h" #endif`.
+   `#if HAVE_CONFIG_H #include"config.h" #endif`.
 6. For both `.cpp` and `.hpp`, include our own
    headers first, in ASCII order (capital `Z`
    before small `a`), with `#include"foo.hpp"`,

@@ -47,6 +47,14 @@ AM_LOG_FLAGS += ASAN_OPTIONS="detect_leaks=1"
 endif
 endif
 
+# Testing/ includes some header files used for
+# testing only.
+# Header files only!
+TESTING_HEADER_FILES = \
+	Testing/Idler.hpp
+
+noinst_HEADERS = $(TESTING_HEADER_FILES)
+
 # These will be loaded by the test suite.
 LDADD = libsidepool.a
 
