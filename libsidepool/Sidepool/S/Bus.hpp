@@ -64,9 +64,11 @@ public:
 		);
 		if (r) {
 			auto& tr = static_cast<Detail::TypedRegistry<a>&>(*r);
-			tr.raise( get_idler()
-				, std::move(val)
-				);
+			return tr.raise( get_idler()
+				       , std::move(val)
+				       );
+		} else {
+			return Sidepool::lift();
 		}
 	}
 	template<typename a>
