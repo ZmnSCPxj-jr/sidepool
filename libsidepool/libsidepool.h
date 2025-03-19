@@ -178,6 +178,21 @@ struct libsidepool_randomizer {
 	);
 };
 
+/** libsidepool_init_set_randomizer
+ *
+ * @desc Give an instance of
+ * `struct libsidepool_randomizer` to the
+ * given initializer.
+ *
+ * After this call, the initializer is
+ * responsible for freeing the given
+ * randomizer.
+ */
+void libsidepool_init_set_randomizer(
+	/*borrows*/ struct libsidepool_init*,
+	/*takes*/ struct libsidepool_randomizer*
+);
+
 /** struct libsidepool_logger
  *
  * @desc A client-provided interface structure which
