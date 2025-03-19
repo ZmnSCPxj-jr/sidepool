@@ -16,6 +16,15 @@ libsidepool_a_SOURCES = \
 	Sidepool/Idler.hpp \
 	Sidepool/Logger.cpp \
 	Sidepool/Logger.hpp \
+	Sidepool/S/Bus.cpp \
+	Sidepool/S/Bus.hpp \
+	Sidepool/S/Detail/Lease.hpp \
+	Sidepool/S/Detail/Registry.cpp \
+	Sidepool/S/Detail/Registry.hpp \
+	Sidepool/S/Detail/TypedLease.hpp \
+	Sidepool/S/Detail/TypedRegistry.hpp \
+	Sidepool/S/Lessor.cpp \
+	Sidepool/S/Lessor.hpp \
 	Sidepool/String.cpp \
 	Sidepool/String.hpp \
 	Sidepool/stringify.hpp \
