@@ -10,6 +10,8 @@ AM_CXXFLAGS += -fsanitize=leak
 endif
 
 libsidepool_a_SOURCES = \
+	Sidepool/Crypto/SHA256.cpp \
+	Sidepool/Crypto/SHA256.hpp \
 	Sidepool/Freed.hpp \
 	Sidepool/Io.hpp \
 	Sidepool/Idler.cpp \
