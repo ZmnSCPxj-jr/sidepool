@@ -5,6 +5,7 @@
 #include"Sidepool/Logger.hpp"
 #include"Sidepool/Main.hpp"
 #include"Sidepool/Mod/all.hpp"
+#include"Sidepool/Msg/ProvideSaver.hpp"
 #include"Sidepool/Msg/Start.hpp"
 #include"Sidepool/S/Bus.hpp"
 #include"Sidepool/Saver.hpp"
@@ -42,6 +43,8 @@ public:
 
 	void start() {
 		util->start(Sidepool::lift().then([this]() {
+			return util->raise(Msg::ProvideSaver{*saver});
+		}).then([this]() {
 			return util->raise(Msg::Start{});
 		}).then([this]() {
 			util->debug("libsidepool started.");
