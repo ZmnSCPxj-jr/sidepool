@@ -511,10 +511,12 @@ struct libsidepool_saver {
 		 * you can call `pass`, with
 		 * `ECANCELED` as the `my_errno`
 		 * argument.
-		 * (conversely, if you are
-		 * failing for any other
-		 * reason, you should not be
-		 * using `ECANCELED`).
+		 * You may also give `EIO` for
+		 * I/O reading errors.
+		 *
+		 * valid `my_errno`:
+		 * - `EIO`
+		 * - `ECANCELED`
 		 */
 		/*borrows*/
 		void (*fail)(
@@ -570,6 +572,17 @@ struct libsidepool_saver {
 		 * a creation request is not
 		 * yet sure to be completed,
 		 * call this with `ECANCELED`.
+		 *
+		 * You may also give `EIO`
+		 * in case of a read/wwrite
+		 * error, or `ENOSPC` for
+		 * out-of-space.
+		 *
+		 * valid `my_errno`:
+		 * - `EEXIST`
+		 * - `ECANCELED`
+		 * - `EIO`
+		 * - `ENOSPC`
 		 */
 		/*borrows*/
 		void (*fail)(
@@ -621,6 +634,14 @@ struct libsidepool_saver {
 		 * read is not yet completed, call
 		 * the `fail` callback with
 		 * `ECANCELED`.
+		 *
+		 * You may also call with `EIO`
+		 * in case of a read error.
+		 *
+		 * valid `my_errno`:
+		 * - `ENOENT`
+		 * - `ECANCELED`
+		 * - `EIO`
 		 */
 		/*borrows*/
 		void (*fail)(
@@ -680,6 +701,18 @@ struct libsidepool_saver {
 		 * Call with `EPERM` if the given
 		 * `generation` does not exactly
 		 * equal the on-disk `generation.
+		 *
+		 * You may call with `EIO` in
+		 * case of a read or write error,
+		 * or `ENOSPC` in case of
+		 * out-of-space.
+		 *
+		 * valid `my_errno`:
+		 * - `ENOENT`
+		 * - `EPERM`
+		 * - `ECANCELED`
+		 * - `EIO`
+		 * - `ENOSPC`
 		 */
 		/*borrows*/
 		void (*fail)(
@@ -728,6 +761,16 @@ struct libsidepool_saver {
 		 * does not exist, or `EPERM` if
 		 * the entry does exist but the
 		 * `generation` does not match.
+		 *
+		 * You may call with `EIO` in case
+		 * of a read/write error or
+		 * `ENOSPC` in case of out-of-space
+		 *
+		 * valid `my_errno`:
+		 * - `ENOENT`
+		 * - `EPERM`
+		 * - `EIO`
+		 * - `ENOSPC`
 		 */
 		/*borrows*/
 		void (*fail)(

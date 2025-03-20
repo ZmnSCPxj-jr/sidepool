@@ -38,6 +38,8 @@ libsidepool_a_SOURCES = \
 	Sidepool/S/Detail/TypedRegistry.hpp \
 	Sidepool/S/Lessee.cpp \
 	Sidepool/S/Lessee.hpp \
+	Sidepool/Saver.cpp \
+	Sidepool/Saver.hpp \
 	Sidepool/String.cpp \
 	Sidepool/String.hpp \
 	Sidepool/Util.hpp \
