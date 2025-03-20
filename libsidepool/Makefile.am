@@ -37,6 +37,7 @@ libsidepool_a_SOURCES = \
 	Sidepool/S/Lessee.hpp \
 	Sidepool/String.cpp \
 	Sidepool/String.hpp \
+	Sidepool/Util.hpp \
 	Sidepool/stringify.hpp \
 	libsidepool.h
 
