@@ -4,6 +4,7 @@
 #include"Sidepool/String.hpp"
 #include<cstddef>
 #include<cstdio>
+#include<memory>
 
 namespace Sidepool::String {
 
