@@ -67,6 +67,7 @@ LDADD = libsidepool.a
 # Tests are written in C++.
 AM_DEFAULT_SOURCE_EXT = .cpp
 TESTS = \
+	tests/crypto/test_sha256 \
 	tests/idler/test_methods \
 	tests/s/test_kill_lessee \
 	tests/s/test_simple_bus \
