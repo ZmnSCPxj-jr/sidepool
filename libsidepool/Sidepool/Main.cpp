@@ -5,16 +5,14 @@
 #include"Sidepool/Logger.hpp"
 #include"Sidepool/Main.hpp"
 #include"Sidepool/S/Bus.hpp"
+#include"Sidepool/Util.hpp"
 #include<vector>
 
 namespace Sidepool {
 
 class Main::Impl {
 private:
-	S::Bus bus;
-
-	std::unique_ptr<Idler> idler;
-	std::unique_ptr<Logger> logger;
+	std::unique_ptr<Util> util;
 
 public:
 	Impl() =delete;
@@ -23,9 +21,13 @@ public:
 
 	Impl( std::unique_ptr<Idler> idler_
 	    , std::unique_ptr<Logger> logger_
-	    ) : bus(*idler_) {
-		idler = std::move(idler_);
-		logger = std::move(logger_);
+	    , std::unique_ptr<Randomizer> rand_
+	    ) {
+		util = std::make_unique<Util>(
+			std::move(idler_),
+			std::move(logger_),
+			std::move(rand_)
+		);
 
 		/* TODO: construct all our
 		submodules and raise our
@@ -34,12 +36,9 @@ public:
 	}
 
 	~Impl() {
-		/* Kill most objects first,
-		then kill the idler last.
+		/* TODO: figure out if we
+		need anything here.
 		*/
-		logger = nullptr;
-
-		idler = nullptr;
 	}
 
 	void receive_message( std::uint8_t peer[33]
@@ -59,10 +58,12 @@ public:
 
 Main::Main( std::unique_ptr<Idler> idler
 	  , std::unique_ptr<Logger> logger
+	  , std::unique_ptr<Randomizer> rand
 	  ) {
 	pimpl = std::make_unique<Impl>(
 		std::move(idler),
-		std::move(logger)
+		std::move(logger),
+		std::move(rand)
 	);
 }
 

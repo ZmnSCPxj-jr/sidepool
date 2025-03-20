@@ -7,6 +7,7 @@
 
 namespace Sidepool { class Idler; }
 namespace Sidepool { class Logger; }
+namespace Sidepool { class Randomizer; }
 
 namespace Sidepool {
 
@@ -39,6 +40,7 @@ public:
 	explicit
 	Main( std::unique_ptr<Idler> idler
 	    , std::unique_ptr<Logger> logger
+	    , std::unique_ptr<Randomizer> rand
 	    );
 
 	/* Implementation of
@@ -48,6 +50,9 @@ public:
 			    , std::size_t message_length
 			    , std::uint8_t const* message
 			    );
+
+	/* Testing.  */
+	void csprng_force_deterministic();
 };
 
 }
