@@ -64,5 +64,42 @@ std::string strftime(char const* tpl, std::tm const& tm) {
 	return std::string(buf.get());
 }
 
+namespace {
+
+std::uint8_t hexdigit(char c) {
+	if ( ('a' <= c && c <= 'f')
+	  || ('A' <= c && c <= 'F')
+	   ) {
+		return (c & 0xF) + 9;
+	} else if ('0' <= c && c<= '9') {
+		return (c & 0xF);
+	} else {
+		throw HexParsingError();
+	}
+}
+
+}
+
+std::vector<std::uint8_t>
+parsehex(std::string const& s) {
+	auto rv = std::vector<std::uint8_t>();
+	auto p = s.begin();
+	while (p != s.end()) {
+		auto p2 = p;
+		++p2;
+		if (p2 == s.end()) {
+			throw HexParsingError();
+		}
+		auto hi = hexdigit(*p);
+		auto lo = hexdigit(*p2);
+		auto byte = (hi << 4) | (lo);
+		rv.push_back(byte);
+
+		p = p2;
+		++p;
+	}
+	return rv;
+}
+
 }
 
