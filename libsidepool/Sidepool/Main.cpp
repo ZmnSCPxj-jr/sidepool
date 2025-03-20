@@ -4,6 +4,7 @@
 #include"Sidepool/Idler.hpp"
 #include"Sidepool/Logger.hpp"
 #include"Sidepool/Main.hpp"
+#include"Sidepool/Mod/all.hpp"
 #include"Sidepool/S/Bus.hpp"
 #include"Sidepool/Util.hpp"
 #include<vector>
@@ -13,6 +14,8 @@ namespace Sidepool {
 class Main::Impl {
 private:
 	std::unique_ptr<Util> util;
+
+	std::shared_ptr<void> mods;
 
 public:
 	Impl() =delete;
@@ -29,10 +32,9 @@ public:
 			std::move(rand_)
 		);
 
-		/* TODO: construct all our
-		submodules and raise our
-		initialization message.
-		*/
+		mods = Mod::all(*util);
+
+		/* TODO: raise init message. */
 	}
 
 	~Impl() {

@@ -24,6 +24,8 @@ libsidepool_a_SOURCES = \
 	Sidepool/Logger.hpp \
 	Sidepool/Main.cpp \
 	Sidepool/Main.hpp \
+	Sidepool/Mod/all.cpp \
+	Sidepool/Mod/all.hpp \
 	Sidepool/Randomizer.cpp \
 	Sidepool/Randomizer.hpp \
 	Sidepool/S/Bus.cpp \
