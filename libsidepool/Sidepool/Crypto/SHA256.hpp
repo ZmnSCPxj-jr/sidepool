@@ -23,6 +23,21 @@ public:
 	/** Hash output is fixed 32 bytes.  */
 	struct Hash {
 		std::uint8_t h[32];
+
+		Hash() =default;
+		Hash(Hash const&) =default;
+		Hash(std::string const&);
+
+		bool operator!=(Hash const& o) const {
+			return !(*this == o);
+		}
+		bool operator==(Hash const& o) const {
+			auto syndrome = std::uint8_t(0);
+			for (auto i = 0; i < 32; ++i) {
+				syndrome |= h[i] ^ o.h[i];
+			}
+			return syndrome == 0;
+		}
 	};
 
 	SHA256();

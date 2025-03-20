@@ -2,6 +2,7 @@
 # include"config.h"
 #endif
 #include"Sidepool/Crypto/SHA256.hpp"
+#include"Sidepool/String.hpp"
 #include<cassert>
 #include<cstdint>
 #include<cstring>
@@ -325,6 +326,14 @@ crypto_hash_sha256(unsigned char *out, const unsigned char *in,
 /* libsodium code ends */
 
 namespace Sidepool::Crypto {
+
+SHA256::Hash::Hash(std::string const& s) {
+	auto dat = Sidepool::String::parsehex(s);
+	if (dat.size() != 32) {
+		throw Sidepool::String::HexParsingError();
+	}
+	std::memcpy(h, &dat[0], 32);
+}
 
 class SHA256::Impl {
 private:
