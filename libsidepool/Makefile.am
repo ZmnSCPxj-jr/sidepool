@@ -1,7 +1,7 @@
 pkglib_LIBRARIES = libsidepool.a
 include_HEADERS = libsidepool.h
 
-AM_CXXFLAGS = -Wall -Werror -fsanitize=address
+AM_CXXFLAGS = -Wall -Werror
 if USE_FSANITIZE_ADDRESS
 AM_CXXFLAGS += -fsanitize=address
 endif
