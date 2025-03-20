@@ -10,6 +10,8 @@ AM_CXXFLAGS += -fsanitize=leak
 endif
 
 libsidepool_a_SOURCES = \
+	Sidepool/Crypto/CSPRNG.cpp \
+	Sidepool/Crypto/CSPRNG.hpp \
 	Sidepool/Crypto/SHA256.cpp \
 	Sidepool/Crypto/SHA256.hpp \
 	Sidepool/Crypto/chacha20_ietf.cpp \
