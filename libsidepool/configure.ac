@@ -48,6 +48,8 @@ AC_TYPE_UINT16_T
 AC_TYPE_UINT32_T
 AC_TYPE_UINT8_T
 
+AS_IF([false], [#then
+
 AC_MSG_CHECKING([if compiler accepts -fsanitize=address])
 saved_CXXFLAGS=${CXXFLAGS}
 CXXFLAGS="${CXXFLAGS} -fsanitize=address"
@@ -75,6 +77,10 @@ int main() { return 0; }
 CXXFLAGS="${saved_CXXFLAGS}"
 AC_MSG_RESULT([${use_fsanitize_leak}])
 AM_CONDITIONAL([USE_FSANITIZE_LEAK], [test x"$use_fsanitize_leak" = xyes])
+], [#else
+AM_CONDITIONAL([USE_FSANITIZE_ADDRESS], [false])
+AM_CONDITIONAL([USE_FSANITIZE_LEAK], [false])
+]) #AS_IF false
 
 AC_MSG_CHECKING([if compiler supports __attribute__((format))])
 AC_COMPILE_IFELSE([AC_LANG_SOURCE([[
