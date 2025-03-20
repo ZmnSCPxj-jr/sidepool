@@ -3,9 +3,9 @@
 #define SIDEPOOL_SAVER_HPP_
 
 #include<cstdint>
-#include<exception>
 #include<functional>
 #include<memory>
+#include<stdexcept>
 #include<string>
 #include<utility>
 #include<vector>
