@@ -7,6 +7,7 @@
 #include"Sidepool/Mod/all.hpp"
 #include"Sidepool/Msg/Start.hpp"
 #include"Sidepool/S/Bus.hpp"
+#include"Sidepool/Saver.hpp"
 #include"Sidepool/Util.hpp"
 #include<vector>
 
@@ -15,6 +16,7 @@ namespace Sidepool {
 class Main::Impl {
 private:
 	std::unique_ptr<Util> util;
+	std::unique_ptr<Saver> saver;
 
 	std::shared_ptr<void> mods;
 
@@ -26,12 +28,14 @@ public:
 	Impl( std::unique_ptr<Idler> idler_
 	    , std::unique_ptr<Logger> logger_
 	    , std::unique_ptr<Randomizer> rand_
+	    , std::unique_ptr<Saver> saver_
 	    ) {
 		util = std::make_unique<Util>(
 			std::move(idler_),
 			std::move(logger_),
 			std::move(rand_)
 		);
+		saver = std::move(saver_);
 
 		mods = Mod::all(*util);
 	}
@@ -69,11 +73,13 @@ public:
 Main::Main( std::unique_ptr<Idler> idler
 	  , std::unique_ptr<Logger> logger
 	  , std::unique_ptr<Randomizer> rand
+	  , std::unique_ptr<Saver> saver
 	  ) {
 	pimpl = std::make_unique<Impl>(
 		std::move(idler),
 		std::move(logger),
-		std::move(rand)
+		std::move(rand),
+		std::move(saver)
 	);
 }
 
