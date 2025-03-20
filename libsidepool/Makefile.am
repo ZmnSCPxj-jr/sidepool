@@ -12,6 +12,8 @@ endif
 libsidepool_a_SOURCES = \
 	Sidepool/Crypto/SHA256.cpp \
 	Sidepool/Crypto/SHA256.hpp \
+	Sidepool/Crypto/chacha20_ietf.cpp \
+	Sidepool/Crypto/chacha20_ietf.hpp \
 	Sidepool/Freed.hpp \
 	Sidepool/Io.hpp \
 	Sidepool/Idler.cpp \
