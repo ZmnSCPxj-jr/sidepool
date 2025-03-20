@@ -66,22 +66,22 @@ public:
 
 	/** Do a single hash run.  */
 	static
-	Hash hash( std::uint8_t const* data
-		 , std::size_t length
-		 ) {
+	Hash run( std::uint8_t const* data
+	        , std::size_t length
+	        ) {
 		auto state = SHA256();
 		state.feed(data, length);
 		return std::move(state).finalize();
 	}
 	template<typename RandIt>
 	static
-	Hash hash(RandIt b, RandIt e) {
+	Hash run(RandIt b, RandIt e) {
 		auto state = SHA256();
 		state.feed(b, e);
 		return std::move(state).finalize();
 	}
 	static
-	Hash hash(std::string const& s) {
+	Hash run(std::string const& s) {
 		auto state = SHA256();
 		state.feed(s);
 		return std::move(state).finalize();
