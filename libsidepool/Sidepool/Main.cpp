@@ -5,6 +5,7 @@
 #include"Sidepool/Logger.hpp"
 #include"Sidepool/Main.hpp"
 #include"Sidepool/Mod/all.hpp"
+#include"Sidepool/Msg/Start.hpp"
 #include"Sidepool/S/Bus.hpp"
 #include"Sidepool/Util.hpp"
 #include<vector>
@@ -33,8 +34,15 @@ public:
 		);
 
 		mods = Mod::all(*util);
+	}
 
-		/* TODO: raise init message. */
+	void start() {
+		util->start(Sidepool::lift().then([this]() {
+			return util->raise(Msg::Start{});
+		}).then([this]() {
+			util->debug("libsidepool started.");
+			return Sidepool::lift();
+		}));
 	}
 
 	~Impl() {
@@ -70,6 +78,11 @@ Main::Main( std::unique_ptr<Idler> idler
 }
 
 Main::~Main() =default;
+
+void
+Main::start() {
+	pimpl->start();
+}
 
 void
 Main::receive_message( std::uint8_t peer[33]

@@ -43,6 +43,17 @@ public:
 	    , std::unique_ptr<Randomizer> rand
 	    );
 
+	/** Call exactly once, just before we
+	 * return the newly-constructed `Main`
+	 * to C code.
+	 *
+	 * This is separate so that we can
+	 * diagnose memory alloc errors at
+	 * initialization separately from
+	 * starting the thing.
+	 */
+	void start();
+
 	/* Implementation of
 	libsidepool_receive_message.
 	*/
