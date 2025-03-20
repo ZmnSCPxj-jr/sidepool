@@ -70,19 +70,21 @@ private:
 	}
 	Sidepool::Io<void>
 	reseed() {
+		typedef Sidepool::Randomizer::Entropy
+			Entropy;
 		return Sidepool::lift().then([this]() {
 			state = Reseeding;
 			return randomizer->get();
-		}).then([this](std::unique_ptr<std::uint8_t[]> entropy) {
+		}).then([this](std::unique_ptr<Entropy> entropy) {
 			state = Normal;
 
 			if (deterministic) {
-				std::memcpy(key, entropy.get(), sizeof(key));
+				std::memcpy(key, entropy->bytes, sizeof(key));
 			} else {
 				auto hasher = SHA256();
 				auto time = std::time(nullptr);
 				auto clock = std::clock();
-				hasher.feed(entropy.get(), 32);
+				hasher.feed(entropy->bytes, 32);
 				hasher.feed((std::uint8_t*) &time, sizeof(time));
 				hasher.feed((std::uint8_t*) &clock, sizeof(clock));
 				/* TODO: hostname.  */

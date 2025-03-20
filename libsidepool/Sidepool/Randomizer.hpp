@@ -23,17 +23,22 @@ namespace Sidepool {
  */
 class Randomizer {
 public:
+	/** The type for a batch of 32
+	 * random bytes.
+	 */
+	struct Entropy {
+		std::uint8_t bytes[32];
+	};
+
 	virtual ~Randomizer() { }
 
-	/** Get 32 random bytes.
+	/** Get 32 random bytes (i.e. an
+	 * Entropy).
 	 *
-	 * There is no way to enforce the
-	 * array length in the type system
-	 * here, just make sure to give
-	 * an array of size 32 mkay?
+	 * Must not return `nullptr`.
 	 */
 	virtual
-	Sidepool::Io<std::unique_ptr<std::uint8_t[]>>
+	Sidepool::Io<std::unique_ptr<Entropy>>
 	get() =0;
 
 	/** Create a managed instance of

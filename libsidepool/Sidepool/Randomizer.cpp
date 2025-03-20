@@ -15,14 +15,13 @@ namespace {
 class RandomizerWrapper : public Sidepool::Randomizer
 			{
 private:
+	typedef Sidepool::Randomizer::Entropy
+		Entropy;
+
 	libsidepool_randomizer* core;
 
-	typedef
-	std::unique_ptr<std::uint8_t[]>
-	Ret;
-	typedef
-	Sidepool::Io<Ret>
-	IoRet;
+	typedef std::unique_ptr<Entropy> Ret;
+	typedef Sidepool::Io<Ret> IoRet;
 
 	class Callback {
 	private:
@@ -49,8 +48,8 @@ private:
 			auto pass = std::move(self->f_pass);
 			self = nullptr;
 
-			auto dat = std::make_unique<std::uint8_t[]>(32);
-			std::memcpy( dat.get()
+			auto dat = std::make_unique<Entropy>();
+			std::memcpy( dat->bytes
 				   , random
 				   , 32
 				   );
