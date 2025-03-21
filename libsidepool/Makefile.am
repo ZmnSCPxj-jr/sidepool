@@ -24,6 +24,8 @@ libsidepool_a_SOURCES = \
 	Sidepool/Logger.hpp \
 	Sidepool/Main.cpp \
 	Sidepool/Main.hpp \
+	Sidepool/Math.cpp \
+	Sidepool/Math.hpp \
 	Sidepool/Mod/all.cpp \
 	Sidepool/Mod/all.hpp \
 	Sidepool/Msg/ProvideSaver.hpp \
