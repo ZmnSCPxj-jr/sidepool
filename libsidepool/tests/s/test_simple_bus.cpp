@@ -20,7 +20,7 @@ struct Example2 {
 int main() {
 	auto idler = Testing::Idler::make();
 	auto lessee = Sidepool::S::Lessee();
-	auto bus = Sidepool::S::Bus(*idler);
+	auto bus = Sidepool::S::Bus();
 
 	auto count = std::size_t(0);
 

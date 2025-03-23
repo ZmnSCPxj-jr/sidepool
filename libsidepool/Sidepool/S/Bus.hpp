@@ -44,15 +44,12 @@ private:
 	get_registry( std::type_index
 		    , std::function<std::shared_ptr<Detail::Registry>()> make_if_absent
 		    );
-	Sidepool::Idler& get_idler();
 
 public:
-	Bus() =delete;
 	Bus(Bus const&) =delete;
 	Bus(Bus&&) =delete;
 
-	explicit
-	Bus(Sidepool::Idler& idler);
+	Bus();
 	~Bus();
 
 	template<typename a>
@@ -64,9 +61,9 @@ public:
 		);
 		if (r) {
 			auto& tr = static_cast<Detail::TypedRegistry<a>&>(*r);
-			return tr.raise( get_idler()
-				       , std::move(val)
-				       );
+			return tr.raise(std::move(val)).then([r]() {
+				return Sidepool::lift();
+			});
 		} else {
 			return Sidepool::lift();
 		}

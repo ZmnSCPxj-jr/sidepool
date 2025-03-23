@@ -20,10 +20,13 @@ private:
 		std::size_t count;
 		std::exception_ptr except;
 
+		std::shared_ptr<a> pval;
+
 		std::function<void()> pass;
 		std::function<void(std::exception_ptr)> fail;
 
 		void complete() {
+			pval = nullptr;
 			if (except) {
 				fail(except);
 			} else {
@@ -31,9 +34,14 @@ private:
 			}
 		}
 	public:
-		Waiter() {
+		Waiter() =delete;
+		Waiter(Waiter&&) =delete;
+		Waiter(Waiter const&) =delete;
+		explicit
+		Waiter(std::shared_ptr<a> pval_) {
 			count = 0;
 			except = nullptr;
+			pval = std::move(pval_);
 			pass = nullptr;
 			fail = nullptr;
 		}
@@ -70,13 +78,19 @@ public:
 	TypedRegistry() =default;
 
 	Sidepool::Io<void>
-	raise( Sidepool::Idler& idler
-	     , a val
+	raise( a val
 	     ) {
 		auto pval = std::make_shared<a>(
 			std::move(val)
 		);
-		auto pwaiter = std::make_shared<Waiter>();
+		/* Construct the waiter and give it a copy
+		of the shared pointer to value.
+		This keeps the value passed to the callback
+		alive until the callbacks have completed.
+		*/
+		auto pwaiter = std::make_shared<Waiter>(
+			pval
+		);
 		auto act = Sidepool::lift();
 		/* Go over our leases and build
 		their actions.
@@ -84,7 +98,6 @@ public:
 		iterate([ pval
 			, pwaiter
 			, &act
-			, &idler
 			](Lease& l) {
 			auto& tl = static_cast<TypedLease<a>&>(l);
 			/* If the lease is already
@@ -97,20 +110,21 @@ public:
 			pwaiter->incr();
 			/* Get our action.  */
 			auto my_act = tl.fun(*pval);
-			/* Append the triggers on
-			the action copletion.
+			auto pmy_act = std::make_shared<Sidepool::Io<void>>(std::move(my_act));
+			/* On the main action, append a
+			new action to call into our
+			action.
 			*/
-			my_act = std::move(my_act).then([pwaiter, pval]() {
-				pwaiter->decr();
-				return Sidepool::lift();
-			}).catch_all([pwaiter, pval](std::exception_ptr e) {
-				pwaiter->decr_fail(e);
+			act = std::move(act).then([ pwaiter
+						  , pmy_act
+						  ]() {
+				pmy_act->run( [pwaiter]() {
+					pwaiter->decr();
+				}, [pwaiter](std::exception_ptr e) {
+					pwaiter->decr_fail(e);
+				});
 				return Sidepool::lift();
 			});
-			/* On the main action, fork
-			the action of this lease.
-			*/
-			act += idler.fork(std::move(my_act));
 			return true;
 		});
 		/* Add our final action, which is

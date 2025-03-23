@@ -16,7 +16,7 @@ struct Example { };
 
 int main() {
 	auto idler = Testing::Idler::make();
-	auto bus = Sidepool::S::Bus(*idler);
+	auto bus = Sidepool::S::Bus();
 	auto lessee1 = std::make_unique<Sidepool::S::Lessee>();
 	auto lessee2 = std::make_unique<Sidepool::S::Lessee>();
 

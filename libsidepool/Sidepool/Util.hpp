@@ -44,7 +44,7 @@ public:
 	    ) {
 		idler = std::move(idler_);
 		logger = std::move(logger_);
-		bus = std::make_unique<S::Bus>(*idler);
+		bus = std::make_unique<S::Bus>();
 		rng = std::make_unique<Crypto::CSPRNG>(
 			std::move(rand_)
 		);

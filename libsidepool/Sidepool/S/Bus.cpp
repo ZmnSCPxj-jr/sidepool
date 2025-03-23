@@ -10,14 +10,13 @@ namespace Sidepool::S {
 
 class Bus::Impl {
 private:
-	Sidepool::Idler& idler;
 	std::map< std::type_index
 		, std::shared_ptr<Detail::Registry>
 		> registries;
 
 public:
-	explicit
-	Impl(Sidepool::Idler& idler_) : idler(idler_) { }
+	Impl() =default;
+	~Impl() =default;
 
 	std::shared_ptr<Detail::Registry>
 	get_registry( std::type_index type
@@ -34,13 +33,9 @@ public:
 		}
 		return it->second;
 	}
-	Sidepool::Idler& get_idler() {
-		return idler;
-	}
 };
 
-Bus::Bus( Sidepool::Idler& idler
-	) : pimpl(std::make_unique<Impl>(idler)) { }
+Bus::Bus() : pimpl(std::make_unique<Impl>()) { }
 Bus::~Bus() =default;
 
 std::shared_ptr<Detail::Registry>
@@ -51,10 +46,6 @@ Bus::get_registry( std::type_index type
 		type,
 		std::move(make_if_absent)
 	);
-}
-Sidepool::Idler&
-Bus::get_idler() {
-	return pimpl->get_idler();
 }
 
 }
