@@ -106,6 +106,10 @@ void libsidepool_init_cancel(
 	/*takes*/ struct libsidepool_init*
 );
 
+/*-------------------------------------------------------------------------
+libsideool-client Interfaces
+-------------------------------------------------------------------------*/
+
 /** struct libsidepool_randomizer
  *
  * @desc A client-provided interface structure which
@@ -1399,6 +1403,54 @@ void libsidepool_init_set_keykeeper(
 	/*borrows*/ struct libsidepool_init*,
 	/*takes*/ struct libsidepool_keykeeper*
 );
+
+/*-------------------------------------------------------------------------
+libsidepool creation and teardown
+-------------------------------------------------------------------------*/
+
+/** libsidepool_init_finish
+ *
+ * @desc Assert that you have given the
+ * necessary interfaces required by
+ * libsidepool to the initializer, and
+ * construct an instance of
+ * `struct libsidepool`.
+ *
+ * The given `struct libsidepool_init`
+ * instance is destroyed by this
+ * function, whether or not this function
+ * succeeds or fails.
+ *
+ * This may return `NULL` and set `errno`
+ * if an initialization error occurred.
+ * `errno` will be `EINVAL` if you are
+ * missing some interface, or `ENOMEM`
+ * in case of out-of-memory.
+ *
+ * In case of an error, this will have
+ * called `free` on any client-provided
+ * interfaces that were taken by the
+ * initializer object.
+ *
+ * If this returns non-`NULL`, then the
+ * client-provided interfaces are likely
+ * to have started getting called.
+ */
+/*gives*/ struct libsidepool*
+libsidepool_init_finish(/*takes*/ struct libsidepool_init*);
+
+/** libsidepool_free
+ *
+ * @desc Free the `struct libsidepool`
+ * instance, as well as all the client-provided
+ * interfaces it has.
+ *
+ * The client-provided interfaces must, in turn,
+ * call `free` methods on all pending asynchronous
+ * requests, prior to returning on their `free`
+ * method.
+ */
+void libsidepool_free(/*takes*/ struct libsidepool*);
 
 #ifdef __cplusplus
 }
