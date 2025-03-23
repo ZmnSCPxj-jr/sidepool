@@ -1,6 +1,7 @@
 #ifndef LIBSIDEPOOL_H_
 #define LIBSIDEPOOL_H_
 
+#include<stddef.h>
 #include<stdint.h>
 
 #ifdef __cplusplus

@@ -47,6 +47,7 @@ libsidepool_a_SOURCES = \
 	Sidepool/String.hpp \
 	Sidepool/Util.hpp \
 	Sidepool/stringify.hpp \
+	libsidepool.cpp \
 	libsidepool.h
 
 EXTRA_DIST = CONTRIBUTING.md
