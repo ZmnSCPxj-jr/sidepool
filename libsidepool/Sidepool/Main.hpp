@@ -7,6 +7,7 @@
 
 namespace Sidepool { class Idler; }
 namespace Sidepool { class Logger; }
+namespace Sidepool { class Math; }
 namespace Sidepool { class Randomizer; }
 namespace Sidepool { class Saver; }
 
@@ -43,6 +44,7 @@ public:
 	    , std::unique_ptr<Logger> logger
 	    , std::unique_ptr<Randomizer> rand
 	    , std::unique_ptr<Saver> saver
+	    , std::unique_ptr<Math> math
 	    );
 
 	/** Call exactly once, just before we

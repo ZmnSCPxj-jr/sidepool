@@ -4,6 +4,7 @@
 #include"Sidepool/Idler.hpp"
 #include"Sidepool/Logger.hpp"
 #include"Sidepool/Main.hpp"
+#include"Sidepool/Math.hpp"
 #include"Sidepool/Randomizer.hpp"
 #include"Sidepool/Saver.hpp"
 #include"libsidepool.h"
@@ -81,10 +82,12 @@ struct libsidepool : public Sidepool::Main {
 		   , std::unique_ptr<Sidepool::Logger> logger
 		   , std::unique_ptr<Sidepool::Randomizer> rand
 		   , std::unique_ptr<Sidepool::Saver> saver
+		   , std::unique_ptr<Sidepool::Math> math
 		   ) : Sidepool::Main( std::move(idler)
 				     , std::move(logger)
 				     , std::move(rand)
 				     , std::move(saver)
+				     , std::move(math)
 				     ) { }
 };
 
@@ -189,11 +192,20 @@ libsidepool_init_finish(libsidepool_init* self_) {
 		auto saver = Sidepool::Saver::create(self->saver.access());
 		logger->debug("Got saver.");
 
+		if (!self->math) {
+			logger->error("Math library required.");
+			errno = EINVAL;
+			return nullptr;
+		}
+		auto math = Sidepool::Math::create(self->math.access());
+		logger->debug("Got math library,");
+
 		rv = std::make_unique<libsidepool>(
 			std::move(idler),
 			std::move(logger),
 			std::move(rand),
-			std::move(saver)
+			std::move(saver),
+			std::move(math)
 		);
 
 	} catch (std::bad_alloc const& _) {

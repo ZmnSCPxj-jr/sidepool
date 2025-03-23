@@ -4,6 +4,7 @@
 #include"Sidepool/Idler.hpp"
 #include"Sidepool/Logger.hpp"
 #include"Sidepool/Main.hpp"
+#include"Sidepool/Math.hpp"
 #include"Sidepool/Mod/all.hpp"
 #include"Sidepool/Msg/ProvideSaver.hpp"
 #include"Sidepool/Msg/Start.hpp"
@@ -18,6 +19,7 @@ class Main::Impl {
 private:
 	std::unique_ptr<Util> util;
 	std::unique_ptr<Saver> saver;
+	std::shared_ptr<Math> math;
 
 	std::shared_ptr<void> mods;
 
@@ -30,6 +32,7 @@ public:
 	    , std::unique_ptr<Logger> logger_
 	    , std::unique_ptr<Randomizer> rand_
 	    , std::unique_ptr<Saver> saver_
+	    , std::unique_ptr<Math> math_
 	    ) {
 		util = std::make_unique<Util>(
 			std::move(idler_),
@@ -37,6 +40,7 @@ public:
 			std::move(rand_)
 		);
 		saver = std::move(saver_);
+		math = std::move(math_);
 
 		mods = Mod::all(*util);
 	}
@@ -77,12 +81,14 @@ Main::Main( std::unique_ptr<Idler> idler
 	  , std::unique_ptr<Logger> logger
 	  , std::unique_ptr<Randomizer> rand
 	  , std::unique_ptr<Saver> saver
+	  , std::unique_ptr<Math> math
 	  ) {
 	pimpl = std::make_unique<Impl>(
 		std::move(idler),
 		std::move(logger),
 		std::move(rand),
-		std::move(saver)
+		std::move(saver),
+		std::move(math)
 	);
 }
 
