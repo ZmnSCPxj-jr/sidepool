@@ -13,14 +13,14 @@ Lessee::add_lease(
 		std::shared_ptr<Detail::Lease> nlease
 ) {
 	assert(nlease);
-	nlease->next_lessor = std::move(top);
+	nlease->next_lessee = std::move(top);
 	top = std::move(nlease);
 }
 
 Lessee::~Lessee() {
 	while (top) {
 		top->clear();
-		top = std::move(top->next_lessor);
+		top = std::move(top->next_lessee);
 	}
 }
 

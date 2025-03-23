@@ -34,16 +34,16 @@ private:
 
 	/** The `next` field for the registry list.  */
 	std::shared_ptr<Lease> next_reg;
-	/** The `next` field for the lessor list.  */
-	std::shared_ptr<Lease> next_lessor;
+	/** The `next` field for the lessee list.  */
+	std::shared_ptr<Lease> next_lessee;
 
 protected:
 
-	/** Called by the lessor when the
-	 * lessor is destroyed.
+	/** Called by the lessee when the
+	 * lessee is destroyed.
 	 *
 	 * The lease itself is not destroyed
-	 * when the lessor is destroyed,
+	 * when the lessee is destroyed,
 	 * but instead the next time the
 	 * registry iterates over its list
 	 * of leases, and it sees the

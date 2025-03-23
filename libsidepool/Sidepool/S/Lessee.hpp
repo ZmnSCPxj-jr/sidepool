@@ -16,9 +16,9 @@ namespace Sidepool::S {
  * automatically deregisters all registered
  * functions on a specific `Sidepool::S::Bus`.
  *
- * It is safe for the lessor to outlive the
+ * It is safe for the lessee to outlive the
  * bus(es) it is used with; memory will be
- * retained uselessly until the lessor is
+ * retained uselessly until the lessee is
  * also destroyed, but there would be
  * no memory leak.
  */
