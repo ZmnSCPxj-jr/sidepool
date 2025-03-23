@@ -6,6 +6,7 @@
 #include"Sidepool/Main.hpp"
 #include"Sidepool/Math.hpp"
 #include"Sidepool/Mod/all.hpp"
+#include"Sidepool/Msg/ProvideMath.hpp"
 #include"Sidepool/Msg/ProvideSaver.hpp"
 #include"Sidepool/Msg/Start.hpp"
 #include"Sidepool/S/Bus.hpp"
@@ -48,6 +49,8 @@ public:
 	void start() {
 		util->start(Sidepool::lift().then([this]() {
 			return util->raise(Msg::ProvideSaver{*saver});
+		}).then([this]() {
+			return util->raise(Msg::ProvideMath{math});
 		}).then([this]() {
 			return util->raise(Msg::Start{});
 		}).then([this]() {

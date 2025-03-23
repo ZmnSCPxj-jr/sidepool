@@ -28,6 +28,7 @@ libsidepool_a_SOURCES = \
 	Sidepool/Math.hpp \
 	Sidepool/Mod/all.cpp \
 	Sidepool/Mod/all.hpp \
+	Sidepool/Msg/ProvideMath.hpp \
 	Sidepool/Msg/ProvideSaver.hpp \
 	Sidepool/Msg/Start.hpp \
 	Sidepool/Randomizer.cpp \
