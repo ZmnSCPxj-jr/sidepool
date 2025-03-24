@@ -88,6 +88,7 @@ TESTS = \
 	tests/s/test_simple_bus \
 	tests/string/test_fmt \
 	tests/string/test_hex \
+	tests/string/test_printhex \
 	tests/stringify/test_simple
 check_PROGRAMS = $(TESTS)
 

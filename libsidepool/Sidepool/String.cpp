@@ -102,5 +102,31 @@ parsehex(std::string const& s) {
 	return rv;
 }
 
+namespace {
+
+void printnybble(std::ostream& os, std::uint8_t const n) {
+	if (n < 0xA) {
+		os.put(char(n) + '0');
+	} else {
+		os.put(char(n) - 0xA + 'A');
+	}
+}
+void printbyte(std::ostream& os, std::uint8_t const b) {
+	printnybble(os, (b >> 4) & 0xF);
+	printnybble(os, (b >> 0) & 0xF);
+}
+
+}
+
+void
+printhex( std::ostream& os
+	, std::uint8_t const* b
+	, std::uint8_t const* e
+	) {
+	for (; b != e; ++b) {
+		printbyte(os, *b);
+	}
+}
+
 }
 

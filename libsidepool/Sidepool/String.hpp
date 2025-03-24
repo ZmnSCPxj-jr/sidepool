@@ -7,6 +7,7 @@
 #include<cstdarg>
 #include<cstdint>
 #include<ctime>
+#include<ostream>
 #include<stdexcept>
 #include<string>
 #include<vector>
@@ -27,6 +28,18 @@ struct HexParsingError : public std::runtime_error {
 };
 
 std::vector<std::uint8_t> parsehex(std::string const&);
+
+void printhex( std::ostream&
+	     , std::uint8_t const* b
+	     , std::uint8_t const* e
+	     );
+inline
+void printhex( std::ostream& os
+	     , std::vector<std::uint8_t> const& v
+	     ) {
+	printhex(os, &*v.begin(), &*v.end());
+}
+
 
 }
 
