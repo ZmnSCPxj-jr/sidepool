@@ -22,6 +22,8 @@ libsidepool_a_SOURCES = \
 	Sidepool/Idler.hpp \
 	Sidepool/Logger.cpp \
 	Sidepool/Logger.hpp \
+	Sidepool/M.cpp \
+	Sidepool/M.hpp \
 	Sidepool/Main.cpp \
 	Sidepool/Main.hpp \
 	Sidepool/Math.cpp \
