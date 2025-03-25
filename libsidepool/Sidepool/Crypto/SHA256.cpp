@@ -2,6 +2,7 @@
 # include"config.h"
 #endif
 #include"Sidepool/Crypto/SHA256.hpp"
+#include"Sidepool/Crypto/memzero.hpp"
 #include"Sidepool/String.hpp"
 #include<cassert>
 #include<cstdint>
@@ -49,10 +50,7 @@ void STORE64_BE( std::uint8_t* dst
 }
 #define ACQUIRE_FENCE ((void) 0)
 void sodium_memzero(void* dat, std::size_t len) {
-	/* TODO: detect memset_s support, or
-	volatile, or whatever.
-	*/
-	std::memset(dat, 0, len);
+	Sidepool::Crypto::memzero(dat, len);
 }
 
 /* Adaptors end.  */

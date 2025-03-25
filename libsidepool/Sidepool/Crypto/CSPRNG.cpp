@@ -4,6 +4,7 @@
 #include"Sidepool/Crypto/CSPRNG.hpp"
 #include"Sidepool/Crypto/SHA256.hpp"
 #include"Sidepool/Crypto/chacha20_ietf.hpp"
+#include"Sidepool/Crypto/memzero.hpp"
 #include"Sidepool/Freed.hpp"
 #include"Sidepool/Io.hpp"
 #include"Sidepool/Randomizer.hpp"
@@ -155,6 +156,10 @@ public:
 		see `Sidepool::Freed` thrown.
 		*/
 		randomizer = nullptr;
+
+		/* Clear out state.  */
+		Sidepool::Crypto::memzero(nonce, sizeof(nonce));
+		Sidepool::Crypto::memzero(key, sizeof(key));
 	}
 
 	explicit

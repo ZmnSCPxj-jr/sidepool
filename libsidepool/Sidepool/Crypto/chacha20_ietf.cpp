@@ -2,6 +2,7 @@
 # include"config.h"
 #endif
 #include"Sidepool/Crypto/chacha20_ietf.hpp"
+#include"Sidepool/Crypto/memzero.cpp"
 #include<cstddef>
 #include<cstdlib>
 #include<cstring>
@@ -26,10 +27,7 @@ std::uint32_t ROTL32(std::uint32_t x, int b) {
 	return (x << b) | (x >> (32 - b));
 }
 void sodium_memzero(void* dat, std::size_t len) {
-	/* TODO: detect memset_s support, or
-	volatile, or whatever.
-	*/
-	std::memset(dat, 0, len);
+	Sidepool::Crypto::memzero(dat, len);
 }
 auto constexpr crypto_stream_chacha20_KEYBYTES = std::size_t(32);
 #define COMPILER_ASSERT(x) do { std::uint8_t _tmp_[(x) ? 1 : -1]; (void) _tmp_; } while(0)
