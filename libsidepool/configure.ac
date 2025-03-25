@@ -94,7 +94,99 @@ int fake_printf(void* dummy, char const* fmt, ...)
     AC_MSG_RESULT([no])
 ])
 
+AC_MSG_CHECKING([if compiler supports GCC __asm__])
+AC_COMPILE_IFELSE([AC_LANG_SOURCE([[
+void dummy(void* ptr) {
+	__asm__ __volatile__ ("" : : "r"(ptr) : "memory");
+}
+]])], [ # then
+	AC_DEFINE([HAVE_GCC_ASM_CLEAR], [1], [Define to 1 if understands gcc __asm__])
+	AC_MSG_RESULT([yes])
+], [ #else
+	AC_MSG_RESULT([no])
+])
+
+AC_MSG_CHECKING([if compiler supports plain 'asm;'])
+AC_COMPILE_IFELSE([AC_LANG_SOURCE([[
+void dummy(void* ptr) {
+	asm;
+}
+]])], [# then
+	AC_DEFINE([HAVE_PLAIN_ASM_CLEAR], [1], [Define to 1 if compiler accepts 'asm;'])
+	AC_MSG_RESULT([yes])
+], [# else
+	AC_MSG_RESULT([no])
+])
+
+AC_MSG_CHECKING([if compiler supports GCC __attribute__((weak))])
+AC_LINK_IFELSE([AC_LANG_SOURCE([[
+void dummy(void*)
+__attribute__((weak))
+;
+int main(int argc, char** argv) {
+	if (dummy) { dummy(argv); }
+}
+]])], [ #then
+	AC_DEFINE([HAVE_ATTRIBUTE_WEAK], [1], [Define to 1 if compiler understands __attribute__((weak))])
+	AC_MSG_RESULT([yes])
+], [ #else
+	AC_MSG_RESULT([no])
+])
+
 # Checks for library functions.
+AC_MSG_CHECKING([if memset_explicit exists])
+AC_LINK_IFELSE([AC_LANG_PROGRAM([[
+#include<string.h>
+]],[[
+	char array[42];
+	(void) memset_explicit(array, 0, sizeof(array));
+]])],[ #then
+	AC_DEFINE([HAVE_MEMSET_EXPLICIT], [1], [Define to 1 if the C23 memset_explicit exists in your C++ compiler.])
+	AC_MSG_RESULT([yes])
+], [ #else
+	AC_MSG_RESULT([no])
+])
+
+AC_MSG_CHECKING([if memset_s exists])
+AC_LINK_IFELSE([AC_LANG_PROGRAM([[
+#define __STDC_WANT_LIB_EXT1__ 1
+#include<string.h>
+]], [[
+	char array[42];
+	(void) memset_s(array, sizeof(array), 0, sizeof(array));
+]])], [ #then
+	AC_DEFINE([HAVE_MEMSET_S], [1], [Define to 1 if the C11 memset_s exists in your C++ compiler.])
+	AC_MSG_RESULT([yes])
+], [ #else
+	AC_MSG_RESULT([no])
+])
+
+AC_MSG_CHECKING([if explicit_bzero exists])
+AC_LINK_IFELSE([AC_LANG_PROGRAM([[
+#include<strings.h>
+]], [[
+	char array[42];
+	explicit_bzero(array, sizeof(array));
+]])], [ #then
+	AC_DEFINE([HAVE_EXPLICIT_BZERO], [1], [Define to 1 if the FreeBSD explicit_bzero in strings.h (notice plural) exists in your C++ compiler.])
+	AC_MSG_RESULT([yes])
+], [ # else
+	AC_MSG_RESULT([no])
+])
+
+AC_MSG_CHECKING([if SecureZeroMemory exists])
+AC_LINK_IFELSE([AC_LANG_PROGRAM([[
+#include<windows.h>
+#include<wincrypt.h>
+]], [[
+	char array[42];
+	(void) SecureZeroMemory(array, sizeof(array));
+]])], [ #then
+	AC_DEFINE([HAVE_WINDOWS_SECUREZEROMEMORY], [1], [Define to 1 if the Windows SecureZeroMemory in wincrypt.h exists in your C++ compiler.])
+	AC_MSG_RESULT([yes])
+], [ # else
+	AC_MSG_RESULT([no])
+])
 
 AC_CONFIG_FILES([Makefile])
 AC_OUTPUT

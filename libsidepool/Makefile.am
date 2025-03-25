@@ -16,6 +16,8 @@ libsidepool_a_SOURCES = \
 	Sidepool/Crypto/SHA256.hpp \
 	Sidepool/Crypto/chacha20_ietf.cpp \
 	Sidepool/Crypto/chacha20_ietf.hpp \
+	Sidepool/Crypto/memzero.cpp \
+	Sidepool/Crypto/memzero.hpp \
 	Sidepool/Freed.hpp \
 	Sidepool/Io.hpp \
 	Sidepool/Idler.cpp \
