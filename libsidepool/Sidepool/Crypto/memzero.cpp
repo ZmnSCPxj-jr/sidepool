@@ -110,7 +110,7 @@ void generic_memzero(void* dat, std::size_t len) {
 namespace {
 void generic_memzero(void* dat, std::size_t len) {
 	auto pdat = (char volatile*) dat;
-	for (auto i = 0; i < len; ++i) {
+	for (auto i = std::size_t(0); i < len; ++i) {
 		pdat[i] = 0;
 	}
 #if HAVE_GCC_ASM_CLEAR
