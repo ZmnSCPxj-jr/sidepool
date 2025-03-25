@@ -1,6 +1,7 @@
 #if HAVE_CONFIG_H
 # include"config.h"
 #endif
+#include"Sidepool/Crypto/memzero.hpp"
 #include"Sidepool/M.hpp"
 #include"Sidepool/Math.hpp"
 #include"Sidepool/String.hpp"
@@ -22,6 +23,10 @@ private:
 	}
 
 public:
+	~Impl() {
+		/* Assume this is a privkey.  */
+		Sidepool::Crypto::memzero(&vec, sizeof(vec));
+	}
 	Impl() =delete;
 	explicit
 	Impl(std::shared_ptr<Math> math_) : math(std::move(math_)) {
@@ -193,6 +198,10 @@ private:
 	}
 
 public:
+	~Impl() {
+		Sidepool::Crypto::memzero(&vec, sizeof(vec));
+	}
+
 	Impl() =delete;
 	Impl(Impl&&) =delete;
 
