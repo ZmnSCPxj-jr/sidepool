@@ -10,6 +10,8 @@ AM_CXXFLAGS += -fsanitize=leak
 endif
 
 libsidepool_a_SOURCES = \
+	Sidepool/Base64x.cpp \
+	Sidepool/Base64x.hpp \
 	Sidepool/Crypto/CSPRNG.cpp \
 	Sidepool/Crypto/CSPRNG.hpp \
 	Sidepool/Crypto/SHA256.cpp \
@@ -91,6 +93,7 @@ LDADD = libsidepool.a
 # Tests are written in C++.
 AM_DEFAULT_SOURCE_EXT = .cpp
 TESTS = \
+	tests/base64x/test_simple \
 	tests/crypto/test_sha256 \
 	tests/idler/test_methods \
 	tests/s/test_kill_lessee \
