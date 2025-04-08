@@ -48,6 +48,9 @@ libsidepool_a_SOURCES = \
 	Sidepool/S/Lessee.hpp \
 	Sidepool/Saver.cpp \
 	Sidepool/Saver.hpp \
+	Sidepool/SerDe/Archive.cpp \
+	Sidepool/SerDe/Archive.hpp \
+	Sidepool/SerDe/Eof.hpp \
 	Sidepool/String.cpp \
 	Sidepool/String.hpp \
 	Sidepool/Util.hpp \
