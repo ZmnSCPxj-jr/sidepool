@@ -51,6 +51,8 @@ libsidepool_a_SOURCES = \
 	Sidepool/SerDe/Archive.cpp \
 	Sidepool/SerDe/Archive.hpp \
 	Sidepool/SerDe/Eof.hpp \
+	Sidepool/SerDe/Trait.hpp \
+	Sidepool/SerDe/serialize.hpp \
 	Sidepool/String.cpp \
 	Sidepool/String.hpp \
 	Sidepool/Util.hpp \
