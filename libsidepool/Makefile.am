@@ -95,6 +95,7 @@ TESTS = \
 	tests/idler/test_methods \
 	tests/s/test_kill_lessee \
 	tests/s/test_simple_bus \
+	tests/serde/test_plain \
 	tests/string/test_fmt \
 	tests/string/test_hex \
 	tests/string/test_printhex \
