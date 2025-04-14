@@ -59,6 +59,12 @@ public:
 	}
 
 	Vec32 const& vec32() const { return vec; }
+	void set_from_vec32(Vec32 const& v) {
+		if (!math->is_valid(vec.bytes)) {
+			throw InvalidScalar();
+		}
+		vec = v;
+	}
 
 	Impl& operator=(Impl const&) =default;
 	void add(Impl const& o) {
@@ -112,6 +118,11 @@ Vec32 const&
 Scalar::vec32() const {
 	assert(pimpl);
 	return pimpl->vec32();
+}
+void
+Scalar::set_from_vec32(Vec32 const& v) {
+	assert(pimpl);
+	pimpl->set_from_vec32(v);
 }
 
 Scalar&
@@ -231,6 +242,12 @@ public:
 	}
 
 	Vec33 const& vec33() const { return vec; }
+	void set_from_vec33(Vec33 const& v) {
+		if (!math->is_valid_pt(v.bytes)) {
+			throw InvalidPoint();
+		}
+		vec = v;
+	}
 
 	Impl& operator=(Impl const&) =default;
 	void add(Impl const& o) {
@@ -282,6 +299,11 @@ Vec33 const&
 Point::vec33() const {
 	assert(pimpl);
 	return pimpl->vec33();
+}
+void
+Point::set_from_vec33(Vec33 const& v) {
+	assert(pimpl);
+	pimpl->set_from_vec33(v);
 }
 
 Point&

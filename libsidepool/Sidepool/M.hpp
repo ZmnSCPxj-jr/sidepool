@@ -2,6 +2,9 @@
 #ifndef SIDEPOOL_M_HPP_
 #define SIDEPOOL_M_HPP_
 
+#include"Sidepool/SerDe/Trait.hpp"
+#include"Sidepool/SerDe/serialize.hpp"
+
 #include<cstdint>
 #include<iostream>
 #include<memory>
@@ -47,6 +50,7 @@ public:
 	      );
 
 	Vec32 const& vec32() const;
+	void set_from_vec32(Vec32 const&);
 
 	Scalar& operator=(Scalar const&);
 	Scalar& operator=(Scalar&&);
@@ -127,6 +131,7 @@ public:
 	     );
 
 	Vec33 const& vec33() const;
+	void set_from_vec33(Vec33 const&);
 
 	Point& operator=(Point const&);
 	Point& operator=(Point&&);
@@ -170,6 +175,42 @@ Point operator*(Scalar const& s, Point const& p) {
 }
 
 std::ostream& operator<<(std::ostream&, Point const&);
+
+}
+
+/* Give trait for serialization of Point and Scalar.  */
+namespace Sidepool::SerDe {
+
+template<>
+struct Trait<Sidepool::M::Scalar> {
+	static
+	void serialize( Archive& a
+		      , Sidepool::M::Scalar& s
+		      ) {
+		auto v = a.is_writing() ? s.vec32() : Sidepool::M::Vec32();
+		for (auto i = 0; i < 32; ++i) {
+			Sidepool::SerDe::serialize(a, v.bytes[i]);
+		}
+		if (a.is_reading()) {
+			s.set_from_vec32(v);
+		}
+	}
+};
+template<>
+struct Trait<Sidepool::M::Point> {
+	static
+	void serialize( Archive& a
+		      , Sidepool::M::Point& p
+		      ) {
+		auto v = a.is_writing() ? p.vec33() : Sidepool::M::Vec33();
+		for (auto i = 0; i < 33; ++i) {
+			Sidepool::SerDe::serialize(a, v.bytes[i]);
+		}
+		if (a.is_reading()) {
+			p.set_from_vec33(v);
+		}
+	}
+};
 
 }
 
