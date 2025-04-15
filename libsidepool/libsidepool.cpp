@@ -64,7 +64,6 @@ public:
 struct libsidepool_init {
 	LibsidepoolPtr<libsidepool_randomizer> rand;
 	LibsidepoolPtr<libsidepool_logger> logger;
-	LibsidepoolPtr<libsidepool_idler> idler;
 	LibsidepoolPtr<libsidepool_saver> saver;
 	LibsidepoolPtr<libsidepool_math> math;
 	LibsidepoolPtr<libsidepool_keykeeper> keykeeper;
@@ -125,12 +124,6 @@ libsidepool_init_set_logger( libsidepool_init* init
 	init->logger = LibsidepoolPtr<libsidepool_logger>(logger);
 }
 void
-libsidepool_init_set_idler( libsidepool_init* init
-			  , libsidepool_idler* idler
-			  ) {
-	init->idler = LibsidepoolPtr<libsidepool_idler>(idler);
-}
-void
 libsidepool_init_set_saver( libsidepool_init* init
 			  , libsidepool_saver* saver
 			  ) {
@@ -160,6 +153,8 @@ libsidepool_init_finish(libsidepool_init* self_) {
 	errno = 0;
 
 	try {
+		auto idler = std::make_unique<Sidepool::Idler>();
+
 		if (!self->logger) {
 			logger = Sidepool::Logger::create_default();
 			logger->debug("Logging will write to stderr.");
@@ -167,14 +162,6 @@ libsidepool_init_finish(libsidepool_init* self_) {
 			logger = Sidepool::Logger::create(self->logger.access());
 			logger->debug("Got logger.");
 		}
-
-		if (!self->idler) {
-			logger->error("Idler required.");
-			errno = EINVAL;
-			return nullptr;
-		}
-		auto idler = Sidepool::Idler::create(self->idler.access());
-		logger->debug("Got idler.");
 
 		if (!self->rand) {
 			logger->error("Randomizer required.");

@@ -77,6 +77,9 @@ public:
 	Sidepool::Io<void> fork(Sidepool::Io<void> io) {
 		return idler->fork(std::move(io));
 	}
+	void now_idle() {
+		return idler->now_idle();
+	}
 	Sidepool::Idler& get_idler() {
 		return *idler;
 	}

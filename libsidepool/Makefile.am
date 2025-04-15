@@ -82,8 +82,7 @@ endif
 # Testing/ includes some header files used for
 # testing only.
 # Header files only!
-TESTING_HEADER_FILES = \
-	Testing/Idler.hpp
+TESTING_HEADER_FILES =
 
 noinst_HEADERS = $(TESTING_HEADER_FILES)
 

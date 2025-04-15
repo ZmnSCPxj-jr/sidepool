@@ -4,91 +4,45 @@
 #include"Sidepool/Freed.hpp"
 #include"Sidepool/Idler.hpp"
 #include"Sidepool/Io.hpp"
-#include"libsidepool.h"
 #include<cassert>
 #include<exception>
-#include<functional>
-#include<memory>
+#include<queue>
 
-namespace {
+namespace Sidepool {
 
-class IdlerAdaptor : public Sidepool::Idler {
+class Idler::Impl {
 private:
-	libsidepool_idler* c_intf;
-
-	IdlerAdaptor() =delete;
-	IdlerAdaptor(IdlerAdaptor const&) =delete;
-	IdlerAdaptor(IdlerAdaptor&&) =delete;
-
-	class Callback
-		: public libsidepool_idle_callback {
-	private:
-		static void
-		f_free(libsidepool_idle_callback* self_) {
-			auto self = std::unique_ptr<Callback>(static_cast<Callback*>(self_));
-			assert(self);
-			assert(self->fail);
-			self->pass = nullptr;
-			try {
-				throw Sidepool::Freed();
-			} catch (...) {
-				self->fail(std::current_exception());
-			}
-			self = nullptr;
-		}
-		static void
-		f_invoke(libsidepool_idle_callback* self_) {
-			auto self = std::unique_ptr<Callback>(static_cast<Callback*>(self_));
-			assert(self);
-			assert(self->pass);
-			self->fail = nullptr;
-			self->pass();
-			self = nullptr;
-		}
-
-		Callback() =delete;
-		Callback(Callback const&) =delete;
-		Callback(Callback&&) =delete;
-
-		std::function<void(void)> pass;
-		std::function<void(std::exception_ptr)> fail;
-	public:
-		explicit
-		Callback( std::function<void(void)> pass_
-			, std::function<void(std::exception_ptr)> fail_
-			) : pass(std::move(pass_))
-			  , fail(std::move(fail_)) {
-			free = &f_free;
-			invoke = &f_invoke;
-		}
-	};
+	std::queue<std::function<void()>> to_call;
 
 public:
-	explicit
-	IdlerAdaptor(libsidepool_idler*& c_intf_) {
-		/* Once we have entered here, the
-		 * memory for the IdlerAdaptor has
-		 * been allocated and we can now
-		 * take responsiblity for the c_intf.
-		 *
-		 * Assignment of PODs cannot throw,
-		 * so the below is atomic with
-		 * regards to exception-safety.
-		 */
-		c_intf = c_intf_;
-		c_intf_ = nullptr;
+	Impl() =default;
+
+	Impl(Impl&&) =delete;
+	Impl(Impl const&) =delete;
+
+	~Impl() {
+		now_idle();
 	}
 
-	~IdlerAdaptor() {
-		if (c_intf->free) {
-			c_intf->free(c_intf);
+	void now_idle() {
+		while (!to_call.empty()) {
+			/* Calling `f` may cause additional
+			 * functions to be enqueued.
+			 * So move it out of the queue first
+			 * and mutate the queue before calling
+			 * into `f`.
+			 */
+			auto f = std::move(to_call.front());
+			to_call.pop();
+			if (f) {
+				f();
+			}
 		}
 	}
 
-	virtual
-	void start(Sidepool::Io<void> va) override {
-		auto iop = std::make_shared<Sidepool::Io<void>>(std::move(va));
-		auto cb = std::make_unique<Callback>([iop]() {
+	void start(Sidepool::Io<void> io) {
+		auto iop = std::make_shared<Sidepool::Io<void>>(std::move(io));
+		to_call.emplace([iop]() {
 			auto pass = [](){};
 			auto fail = [](std::exception_ptr e) {
 				try {
@@ -100,23 +54,21 @@ public:
 				}
 			};
 			iop->run(std::move(pass), std::move(fail));
-		}, [](std::exception_ptr) { });
-		/* Pass it on.  */
-		c_intf->on_idle(c_intf, cb.release());
-	}
-	virtual
-	Sidepool::Io<void> yield() override {
-		return Sidepool::Io<void>([this]( std::function<void(void)> pass
-						, std::function<void(std::exception_ptr)> fail
-						) {
-			auto cb = std::make_unique<Callback>(pass, fail);
-			c_intf->on_idle(c_intf, cb.release());
 		});
 	}
-	virtual
-	Sidepool::Io<void>
-	fork(Sidepool::Io<void> va) override {
-		auto iop = std::make_shared<Sidepool::Io<void>>(std::move(va));
+
+	Sidepool::Io<void> yield() {
+		return Sidepool::Io<void>([this
+					  ]( std::function<void()> pass
+					   , std::function<void(std::exception_ptr)> fail
+					   ) {
+			to_call.emplace(std::move(pass));
+		});
+	}
+
+	Sidepool::Io<void> fork( Sidepool::Io<void> io
+			       ) {
+		auto iop = std::make_shared<Sidepool::Io<void>>(std::move(io));
 		return Sidepool::lift().then([iop, this]() {
 			start(std::move(*iop));
 			return yield();
@@ -124,13 +76,25 @@ public:
 	}
 };
 
+Idler::Idler() : pimpl(std::make_unique<Impl>()) { }
+Idler::~Idler() =default;
+
+void Idler::start(Sidepool::Io<void> io) {
+	assert(pimpl);
+	pimpl->start(std::move(io));
+}
+Sidepool::Io<void> Idler::yield() {
+	assert(pimpl);
+	return pimpl->yield();
+}
+Sidepool::Io<void> Idler::fork(Sidepool::Io<void>io) {
+	assert(pimpl);
+	return pimpl->fork(std::move(io));
 }
 
-namespace Sidepool {
-
-std::unique_ptr<Idler>
-Idler::create(libsidepool_idler*& var) {
-	return std::make_unique<IdlerAdaptor>(var);
+void Idler::now_idle() {
+	assert(pimpl);
+	pimpl->now_idle();
 }
 
 }

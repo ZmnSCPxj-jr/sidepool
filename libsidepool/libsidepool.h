@@ -262,120 +262,6 @@ void libsidepool_init_set_logger(
 	/*takes*/ struct libsidepool_logger*
 );
 
-/** struct libsidepool_idle_callback
- *
- * @desc A library-provided interface structure
- * provided to `struct libsidepool_idler` when
- * registering an idle callback.
- */
-struct libsidepool_idle_callback {
-	/** A pointer to a user structure.  */
-	void* user;
-	/** A non-`NULL` pointer to a function that is
-	 * used to free this structure without invoking
-	 * the idle callback.
-	 * The client-provided idler interface MUST NOT
-	 * call this function unless the interface gets
-	 * freed with one or more idle callbacks not
-	 * yet called.
-	 */
-	void (*free)(
-		/*takes*/
-		struct libsidepool_idle_callback*
-	);
-	/** A non-`NULL` pointer to a function that
-	 * should be called by the client-provided
-	 * `struct libsidepool_idler` when the
-	 * process is otherwise idle.
-	 *
-	 * Once this function is called, responsibility
-	 * for the `struct libsidepool_idle_callback`
-	 * is now returned to the library and the
-	 * library is responsible for freeing this
-	 * callback object.
-	 * This only needs to be called once.
-	 *
-	 * This may re-entrantly call the `on_idle`
-	 * function of the idler.
-	 */
-	void (*invoke)(
-		/*takes*/
-		struct libsidepool_idle_callback*
-	);
-
-	/** Convenient, suggestively-named pointers
-	 * for use by the client-provided idler.
-	 * libsidepool will ignore these fields and
-	 * not initialize, change, or read them.
-	 *
-	 * If you *do* use these in an embedded
-	 * linked list, make sure to remove this
-	 * node from the list *before* you call
-	 * either `free` or `invoke`, as either
-	 * of those will cause this object to
-	 * be freed.
-	 */
-	struct libsidepool_idle_callback* prev;
-	struct libsidepool_idle_callback* next;
-};
-
-/** struct libsidepool_idler
- *
- * @desc A client-provided interface structure which
- * allows a `struct libsidepool` instance to trigger a
- * function to be called, once, when the process is
- * idle.
- */
-struct libsidepool_idler {
-	/** A pointer to a user structure.  */
-	void* user;
-	/** If non-`NULL`, called on cancellation of
-	 * the `struct libsidepool_init`, or freeing
-	 * of the `struct libsidepool`, to free this
-	 * idler.
-	 */
-	void (*free)(
-		/*takes*/ struct libsidepool_idler*
-	);
-	/** A non-`NULL` function that is called by the
-	 * library instance to add a
-	 * `struct libsidepool_idle_callback` that is
-	 * called while the process is idle.
-	 *
-	 * The client interface is responsible for the
-	 * idle callback until it is able to call its
-	 * `invoke` function or `free` function.
-	 * It should only call the `free` function of
-	 * any not-yet-triggered idle callbacks if its
-	 * own `free` function is called.
-	 *
-	 * The given idle callback needs to be called
-	 * exactly once, however, the callback may
-	 * itself call `on_idle`.
-	 *
-	 * This function will be called only after the
-	 * `libsidepool_init_finish` is called.
-	 */
-	void (*on_idle)(
-		/*borrows*/ struct libsidepool_idler*,
-		/*takes*/ struct libsidepool_idle_callback*
-	);
-};
-
-/** libsidepool_init_set_idler
- *
- * @desc Give an instance of
- * `struct libsidepool_idler` to the given initializer
- * instance.
- *
- * After this call, the library is responsible for
- * freeing the idler instance.
- */
-void libsidepool_init_set_idler(
-	/*borrows*/ struct libsidepool_init*,
-	/*takes*/ struct libsidepool_idler*
-);
-
 /* forward declaration.  */
 struct libsidepool_saver_scan;
 /** struct libsidepool_saver
@@ -1372,10 +1258,7 @@ struct libsidepool_keykeeper_req {
 	 * It is perfectly safe to call this
 	 * directly from the keykeeper `request`
 	 * function; `libsidepool` will copy the
-	 * resulting tweaked key and then
-	 * schedule the continuation of the process
-	 * during an idle period via your provided
-	 * idler.
+	 * resulting tweaked key.
 	 * For example, if you keep the node private
 	 * key in the memory of the process that
 	 * also contains the `libsidepool` instance,

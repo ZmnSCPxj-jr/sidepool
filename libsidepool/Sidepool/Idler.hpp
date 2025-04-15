@@ -1,43 +1,45 @@
 #ifndef SIDEPOOL_IDLER_HPP_
 #define SIDEPOOL_IDLER_HPP_
 
-#include"Sidepool/Io.hpp"
-
+#include<functional>
 #include<memory>
 
-extern "C" {
-	struct libsidepool_idler;
-}
+namespace Sidepool { template<typename a> class Io; }
 
 namespace Sidepool {
 
 /** class Sidepool::Idler
  *
- * @desc Abstract class to provide start(), yield(),
- * and fork() greenthread-management functions.
+ * @desc Concrete class to register a function to be
+ * executed later.
  */
 class Idler {
+private:
+	class Impl;
+	std::unique_ptr<Impl> pimpl;
+
 public:
-	virtual ~Idler() { }
+	Idler();
+	Idler(Idler&&) =default;
+
+	Idler(Idler const&) =delete;
+
+	~Idler();
+
 	/** Start the given action the next time
 	 * the process is idle.
 	 *
 	 * If the given greenthread throws a
-	 * Sidepool::Freed, this should ignore the
+	 * Sidepool::Freed, this ignores the
 	 * exception, but all other exceptions
-	 * should be reported as an unusual error.
+	 * will be rethrown outside of Io.
 	 */
-	virtual void start(Sidepool::Io<void>) =0;
+	void start(Sidepool::Io<void>);
 	/** Called by a greenthread if it wants to
 	 * either reset its C stack, or it wants to
 	 * let other greenthreads run.
-	 *
-	 * Throws a Sidepool::Freed as an exception
-	 * if the idler is freed (which should only
-	 * happen if the main sidepool library
-	 * instance is freed).
 	 */
-	virtual Sidepool::Io<void> yield() =0;
+	Sidepool::Io<void> yield();
 	/** Called by a greenthread to start a new
 	 * greenthread.
 	 * This should also yield so that the given
@@ -51,23 +53,15 @@ public:
 	 * exception, but all other exceptions
 	 * should be reported as an unusual error.
 	 */
-	virtual Sidepool::Io<void> fork(
+	Sidepool::Io<void> fork(
 		Sidepool::Io<void>
-	) =0;
+	);
 
-	/** Create a managed instance of
-	 * `Sidepool::idler` from a
-	 * `libsidepool_idler*`.
-	 * This takes responsibility for the idler
-	 * and sets the passed-in pointer to
-	 * `nullptr` if it is able to create the
-	 * object.
-	 * If it throws, the passed-in pointer is
-	 * not cleared.
+	/** Call just before returning to the caller
+	 * so that we can run everything we need to
+	 * run.
 	 */
-	static
-	std::unique_ptr<Idler>
-	create(libsidepool_idler*& var);
+	void now_idle();
 };
 
 }

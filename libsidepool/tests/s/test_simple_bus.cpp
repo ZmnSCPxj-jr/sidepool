@@ -2,9 +2,9 @@
 # include"config.h"
 #endif
 #undef NDEBUG
+#include"Sidepool/Idler.hpp"
 #include"Sidepool/S/Bus.hpp"
 #include"Sidepool/S/Lessee.hpp"
-#include"Testing/Idler.hpp"
 #include<cassert>
 #include<cstddef>
 
@@ -18,7 +18,7 @@ struct Example2 {
 }
 
 int main() {
-	auto idler = Testing::Idler::make();
+	auto idler = std::make_unique<Sidepool::Idler>();
 	auto lessee = Sidepool::S::Lessee();
 	auto bus = Sidepool::S::Bus();
 
@@ -51,7 +51,7 @@ int main() {
 	});
 
 	idler->start(std::move(code));
-	idler->run();
+	idler->now_idle();
 
 	assert(count == 2);
 

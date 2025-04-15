@@ -57,6 +57,7 @@ public:
 			util->debug("libsidepool started.");
 			return Sidepool::lift();
 		}));
+		util->now_idle();
 	}
 
 	~Impl() {
@@ -77,6 +78,8 @@ public:
 			message + message_length
 		);
 		/* TODO.  */
+
+		util->now_idle();
 	}
 };
 
