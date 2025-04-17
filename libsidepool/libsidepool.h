@@ -1288,6 +1288,322 @@ void libsidepool_init_set_keykeeper(
 	/*takes*/ struct libsidepool_keykeeper*
 );
 
+/*forward declare*/
+struct libsidepool_chainer_spendmon;
+struct libsidepool_chainer_receivemon;
+/** struct libsidepool_chainer
+ *
+ * @desc A client-provided interface to an object
+ * that is to be used to interact with the
+ * blockchain layer.
+ *
+ * The `libsidepool_chainer` interface is largely
+ * based on BIP157/158, on the assumption that the
+ * interface can be implemented on top of Electrum
+ * protocol or raw `bitcoind` RPC.
+ */
+struct libsidepool_chainer {
+	/** A pointer to a user structure.  */
+	void* user;
+	/** If non-`NULL`, called on cancellaiton of
+	 * the `struct libsidepool_init`, or freeing
+	 * of the `struct libsidepool`, to free this
+	 * chainer.
+	 */
+	void (*free)(
+		/*takes*/ struct libsidepool_chainer*
+	);
+	/** Wait for the given blockheight, or higher,
+	 * to be reached.
+	 * libsidepool may call this with `blockheight`
+	 * set to 0, which basically makes this a
+	 * simple "what is the current blockheight"
+	 * query.
+	 * If the chainer is freed before the specified
+	 * blockheight is reached, call `fail` instead.
+	 */
+	void (*waitblockheight)(
+		/*borrows*/ struct libsidepool_chainer*,
+		/** The blockheight to wait for.
+		 * Can be 0, which makes this a
+		 * "what is the current blockheight?"
+		 * query.
+		 */
+		unsigned int blockheight,
+		/** Call when the requested blockheight,
+		 * or higher, is reached.
+		 * Give it the current blockheight.
+		 */
+		/*borrows*/
+		void (*pass)(
+			/*takes*/ void* context,
+			unsigned int blockheight
+		),
+		/** Call when the chainer is freed
+		 * without the blockheight being
+		 * reached.
+		 */
+		/*borrows*/
+		void (*fail)(
+			/*takes*/ void* context
+		),
+		/** Context for the `pass` and
+		 * `fail` callbacks.
+		 */
+		/*takes*/ void* context
+	);
+	/** Broadcast the given transaction.
+	 * The transaction is formatted in full
+	 * SegWit format with witness.
+	 */
+	void (*broadcast)(
+		/*borrows*/ struct libsidepool_chainer*,
+		/** The length of the transaction.  */
+		size_t transaction_length,
+		/** The transaction to be broadcast.  */
+		uint8_t const* transaction
+	);
+	/** Broadcast two transactions in a single
+	 * package.
+	 * The two transactions are 1P1C (one parent
+	 * one child), i.e. the second transaction
+	 * spends one input of the first transaction,
+	 * and the first transaction may have low
+	 * or 0 feerate.
+	 *
+	 * Unfortunately this requires `submitpackage`
+	 * in the Bitcoin RPC, which might not be
+	 * exposed on most APIs or libraries yet.
+	 * Sad, but necessary!
+	 * It is **not** the same as calling `broadcast`
+	 * twice, as the parent transaction may have a
+	 * feerate below minimum relay fee, causing it
+	 * to fail broadcast and orphaning the child.
+	 */
+	void (*broadcast2)(
+		/*borrows*/ struct libsidepool_chainer*,
+		/** The length of the parent transaction.  */
+		size_t parent_transaction_length,
+		/** The parent transaction.  */
+		uint8_t const* parent_transaction,
+		/** The length of the child transaction.  */
+		size_t child_transaction_length,
+		/** The child transaction.  */
+		uint8_t const* child_transaction
+	);
+	/** Wait for the given spendmon to trigger.
+	 * See `struct libsidepool_chainer_spendmon`.
+	 */
+	void (*waitspendmon)(
+		/*borrows*/ struct libsidepool_chainer*,
+		/*takes*/ struct libsidepool_chainer_spendmon*
+	);
+	/** Cancel waiting for the given spendmon to
+	 * trigger.
+	 * The caller (libsidepool) becomes responsible
+	 * for deleting the spendmon, the client code
+	 * providing this interface should not call
+	 * `free` anymore (i.e.* libsidepool "takes back"
+	 * the spendmon).
+	 */
+	void (*cancelspendmon)(
+		/*borrows*/ struct libsidepool_chainer*,
+		/*relinquishes*/ struct libsidepool_chainer_spendmon*
+	);
+	/** Wait for the given receivemon to trigger.
+	 * See `struct libsidepool_chainer_receivemon`.
+	 */
+	void (*waitreceivemon)(
+		/*borrows*/ struct libsidepool_chainer*,
+		/*takes*/ struct libsidepool_chainer_receivemon*
+	);
+	/** Cancel waiting for the given receivemon to
+	 * trigger.
+	 * The caller (libsidepool) becomes responsible
+	 * for deleting the receivemon, the client code
+	 * providing this interface should not call
+	 * `free` anymore (i.e.* libsidepool "takes back"
+	 * the receivemon).
+	 */
+	void (*cancelreceivemon)(
+		/*borrows*/ struct libsidepool_chainer*,
+		/*relinquishes*/ struct libsidepool_chainer_receivemon*
+	);
+};
+
+/** struct libsidepool_chainer_spendmon
+ *
+ * @desc A libsidepool-provided interface and
+ * data structure that contains the details for
+ * the request to monitor the spend of a UTXO.
+ *
+ * The client should check if the given
+ * transaction output gets spent on the
+ * confirmed blockchain, and call `trigger`
+ * on that event.
+ */
+struct libsidepool_chainer_spendmon {
+	/** A pointer to a user structure.  */
+	void* user;
+	/** Call this if the chainer instance is
+	 * destroyed before the UTXO spend is
+	 * confirmed.
+	 */
+	void (*free)(
+		/*takes*/
+		struct libsidepool_chainer_spendmon*
+	);
+
+	/** The transaction ID of the transaction whose
+	 * output is to be monitored, i.e. the txid
+	 * of the txout being monitored.
+	 */
+	uint8_t txout_txid[32];
+	/** The output index of the transaction whose
+	 * output is to be monitored, i.e. the outnum
+	 * of the txout being monitored.
+	 */
+	unsigned int txout_outnum;
+	/** The length of the `scriptPubKey` of the
+	 * txout being monitored.
+	 */
+	size_t txout_scriptPubKey_length;
+	/** The actual `scriptPubKey` of the transaction
+	 * output being monitored.
+	 * This would be the "previous output script";
+	 * for a BIP158 client, you can filter a block
+	 * on the block filter using this, then download
+	 * any matching block and check for transactions
+	 * whose inputs match the given `txout_txid`
+	 * and `txout_outnum` above.
+	 */
+	uint8_t const* txout_scriptPubKey;
+	/** The number of confirmations the spending
+	 * transaction must have before we trigger
+	 * this monitor.
+	 */
+	unsigned int confirmations;
+	/** The block height at which libsidepool
+	 * knows the txout was created.
+	 * It is enough to start scanning from this
+	 * given blockheight to the block tip (minus
+	 * `confirmations`) to determine if the
+	 * txout is spent.
+	 */
+	unsigned int created_at_blockheight;
+
+	/* The client must set the fields below
+	 * before calling the `trigger` function;
+	 * libsidepool clears them to 0.
+	 */
+
+	/** The block height at which the UTXO was
+	 * spent.
+	 */
+	unsigned int spent_at_blockheight;
+	/** The transaction ID of the transaction
+	 * that spends the txout.
+	 */
+	uint8_t spending_txid[32];
+	/** The input index of the transaction
+	 * that spends the txout.
+	 */
+	unsigned int spending_innum;
+
+	/** Call this once a transaction spending
+	 * the given block height has confirmed
+	 * with `confirmations` blocks, and
+	 * after loading `spent_at_blockheight`,
+	 * `spending_txid` and `spending_innum`.
+	 */
+	void (*trigger)(
+		/*takes*/
+		struct libsidepool_chainer_spendmon*
+	);
+};
+
+/** struct libsidepool_chainer_receivemon
+ *
+ * @desc A libsidepool-provided interface and
+ * data structure that contains the details for
+ * the request to monitor receiving into a specific
+ * address / `scriptPubKey`.
+ */
+struct libsidepool_chainer_receivemon {
+	/** A pointer to a user structure.  */
+	void* user;
+	/** Call this if the chainer instance is
+	 * destroyed before the given scriptPubKey
+	 * is sent.
+	 */
+	void (*free)(
+		/*takes*/
+		struct libsidepool_chainer_receivemon*
+	);
+
+	/** The length of the `scriptPubKey` that we
+	 * are waiting to get funded.
+	 */
+	size_t scriptPubKey_length;
+	/** The `scriptPubKey` that we are waiting to
+	 * get funded.
+	 * This is either a SegWit v0 (P2WPKH or P2WSH)
+	 * or a SegWit v1 (P2TR) address.
+	 */
+	uint8_t const* scriptPubKey;
+	/** The number of confirmations that the funding
+	 * transaction (i.e. the transaction which has
+	 * at least one output that matches the given
+	 * `scriptPubKey`) should have.
+	 */
+	unsigned int confirmations;
+	/** The *expected* minimum blockheight at which
+	 * the given `scriptPubKey` would get funded.
+	 * The client is not required to check blocks
+	 * below this blockheight for whether the
+	 * given `scriptPubKey` is funded.
+	 */
+	unsigned int expected_min_blockheight;
+
+	/* The client must set the fields below
+	 * before calling the `trigger` function;
+	 * libsidepool clears them to 0.
+	 *
+	 * The client is only required to report
+	 * the first transaction that actually
+	 * funds the given `scriptPubKey`.
+	 */
+
+	/** The block height at which the funding
+	 * transaction (i.e. a transaction where
+	 * at least one output pays to the given
+	 * `scriptPubKey`) was seen.
+	 */
+	unsigned int funded_at_blockheight;
+	/** The transaction ID of the first
+	 * transaction seen that funds the given
+	 * `scriptPubKey`.
+	 */
+	uint8_t funding_txid[32];
+	/** The output index of the above
+	 * `funding_txid` that pays to the given
+	 * `scriptPubKey`.
+	 */
+	unsigned int funding_outnum;
+
+	/** Call this once a transaction funding the
+	 * given `scriptPubKey` is found to be
+	 * confirmed at the given `confirmations`
+	 * onchain, after filling in
+	 * `funded_at_blockheight`, `funding_txid`,
+	 * and `funding_outnum`.
+	 */
+	void (*trigger)(
+		/*takes*/
+		struct libsidepool_chainer_receivemon*
+	);
+};
+
 /*-------------------------------------------------------------------------
 libsidepool creation and teardown
 -------------------------------------------------------------------------*/
