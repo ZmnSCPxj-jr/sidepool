@@ -224,7 +224,7 @@ libsidepool_init_finish(libsidepool_init* self_) {
 
 void
 libsidepool_receive_message( libsidepool* main
-			   , std::uint8_t peer[33]
+			   , std::uint8_t const peer[33]
 			   , std::size_t len
 			   , std::uint8_t const* msg
 			   ) {

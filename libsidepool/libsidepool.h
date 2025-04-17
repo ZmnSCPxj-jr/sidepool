@@ -898,7 +898,7 @@ void libsidepool_receive_message(
 	 * that sent the message, in compressed
 	 * DER format.
 	 */
-	uint8_t peer[33],
+	uint8_t const peer[33],
 	/** The length of the message data payload,
 	 * in bytes.  */
 	size_t message_length,

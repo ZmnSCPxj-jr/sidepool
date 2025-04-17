@@ -66,10 +66,10 @@ public:
 		*/
 	}
 
-	void receive_message( std::uint8_t peer[33]
-			    , std::size_t message_length
-			    , std::uint8_t const* message
-			    ) {
+	void receive_message_core( std::uint8_t const peer[33]
+				 , std::size_t message_length
+				 , std::uint8_t const* message
+				 ) {
 		/* Create a vector copy of the given
 		message.
 		*/
@@ -80,6 +80,20 @@ public:
 		/* TODO.  */
 
 		util->now_idle();
+	}
+	void receive_message( std::uint8_t const peer[33]
+			    , std::size_t message_length
+			    , std::uint8_t const* message
+			    ) {
+		try {
+			receive_message_core(peer, message_length, message);
+		} catch (std::bad_alloc const& _) {
+			util->error("libsidepool_receive_message: Out-of-memory!");
+		} catch (std::exception const& e) {
+			util->error("libsidepool_receive_message: Uncaught exception: %s", e.what());
+		} catch (...) {
+			util->error("libsidepool_receive_message: Uncaught exception of unknown type.");
+		}
 	}
 };
 
@@ -106,7 +120,7 @@ Main::start() {
 }
 
 void
-Main::receive_message( std::uint8_t peer[33]
+Main::receive_message( std::uint8_t const peer[33]
 		     , std::size_t message_length
 		     , std::uint8_t const* message
 		     ) {

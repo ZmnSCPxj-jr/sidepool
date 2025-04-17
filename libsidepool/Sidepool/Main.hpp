@@ -61,7 +61,7 @@ public:
 	/* Implementation of
 	libsidepool_receive_message.
 	*/
-	void receive_message( std::uint8_t peer[33]
+	void receive_message( std::uint8_t const peer[33]
 			    , std::size_t message_length
 			    , std::uint8_t const* message
 			    );
